@@ -159,6 +159,10 @@ def rmm_climo(ts, olr, u850, u200):
         prior = np.full_like(a, np.nan)
         prior[120:] = (cs[120:-1] - cs[:-121]) / 120.0
         means[name], anoms[name] = mean, a - prior
+    for name in ("olr", "u850", "u200"):
+        x = anoms[name][120:]
+        log.info("RMM input %-4s: %d days, %.1f%% valid, anomaly std %.2f",
+                 name, len(x), 100 * np.isfinite(x).mean(), float(np.nanstd(x)) if np.isfinite(x).any() else float("nan"))
     ok = ~np.isnan(anoms["olr"]).any(1) & ~np.isnan(anoms["u850"]).any(1) & ~np.isnan(anoms["u200"]).any(1)
     eofs, norms, pcstd, pcstd_w = ix.compute_rmm_eofs(anoms["olr"][ok], anoms["u850"][ok], anoms["u200"][ok])
     return means, eofs, norms, pcstd, pcstd_w
@@ -210,6 +214,9 @@ def main():
     olr_eq = olr_eq[[i - idx[0] for i in idx]]          # align day-for-day with the winds
     ds.close()
     olr = (olr_eq * w[None, :, None]).sum(1) / w.sum()
+    for nm, x in (("olr", olr), ("u850", u850), ("u200", u200)):
+        log.info("raw %-4s: shape %s, %.1f%% finite, range %.1f .. %.1f", nm, x.shape,
+                 100 * np.isfinite(x).mean(), np.nanmin(x), np.nanmax(x))
     means, eofs, norms, pcstd, pcstd_w = rmm_climo(tsu, olr, u850, u200)
 
     ao_p, nao_p, names, mu, sd = index_constants(h, aam_anom)
