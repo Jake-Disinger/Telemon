@@ -45,9 +45,17 @@ jobs:
       - name: Run tests
         run: cd pipeline && python -m pytest tests -q
 
+      - name: Restore download progress
+        uses: actions/cache/restore@v4
+        with:
+          path: pipeline/cache
+          key: psl-cache-${{ github.run_id }}
+          restore-keys: psl-cache-
+
       - name: Climatology (about 30-90 minutes the first time)
         env:
           GH_TOKEN: ${{ github.token }}
+          TELE_CACHE_DIR: ${{ github.workspace }}/pipeline/cache
         run: |
           if [ "${{ inputs.rebuild }}" != "true" ] && gh release download climatology -p climatology.npz -D pipeline --clobber; then
             echo "Using existing climatology."
@@ -57,6 +65,13 @@ jobs:
               gh release create climatology --title "Climatology 1991-2020" --notes "Built by the Setup workflow. Used by every ingest run."
             gh release upload climatology pipeline/climatology.npz --clobber
           fi
+
+      - name: Save download progress (kept even if a later step fails)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: pipeline/cache
+          key: psl-cache-${{ github.run_id }}
 
       - name: Prepare data-store branch
         run: |
