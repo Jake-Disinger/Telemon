@@ -60,11 +60,16 @@ def eof_pattern(monthly_anoms, dom):
     m = domain_mask(dom)
     sw = np.sqrt(COSLAT)[:, None] * np.ones(LON.size)[None, :]
     X = (monthly_anoms * sw)[:, m]                      # (time, npts)
-    X = X - X.mean(axis=0)
+    X = np.where(np.isfinite(X), X, np.nan)
+    keep = np.isfinite(X).mean(axis=1) > 0.9            # drop months that are mostly missing
+    X = X[keep]
+    X = X - np.nanmean(X, axis=0)
+    X = np.where(np.isfinite(X), X, 0.0)                # remaining isolated gaps -> zero anomaly
     _, _, vt = np.linalg.svd(X, full_matrices=False)
     e = vt[0]
     pc = X @ e
     pattern = np.zeros(m.shape)
+    e = np.nan_to_num(e)
     pattern[m] = e
     return pattern, float(pc.std())
 
