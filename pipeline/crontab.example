@@ -1,0 +1,5 @@
+# Teleconnection Monitor ingest — checks every 30 min, processes only new runs.
+# Adjust paths. The script holds a lock so overlapping runs simply exit.
+*/30 * * * * cd /opt/telemon/pipeline && /usr/bin/python3 run_ingest.py >> /opt/telemon/pipeline/state/ingest.log 2>&1
+# Trim the log weekly
+0 5 * * 0 tail -n 20000 /opt/telemon/pipeline/state/ingest.log > /tmp/ti.log && mv /tmp/ti.log /opt/telemon/pipeline/state/ingest.log

@@ -1,0 +1,119 @@
+{
+  "_comment": "Paths are relative to this file. URL templates use {ymd} {hh} {ymdh} {fff} {step} (+{member} for GEFS, {var} {lev} for GEPS).",
+  "data_dir": "../web/data",
+  "state_dir": "./state",
+  "climatology": "./climatology.npz",
+  "retention_days": 60,
+  "analysis_model": "gfs",
+  "models": {
+    "gfs": {
+      "enabled": true,
+      "provider": "ncep",
+      "kind": "det",
+      "cycles": [
+        0,
+        6,
+        12,
+        18
+      ],
+      "step_hours": 12,
+      "max_hours": 384,
+      "url": "https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{ymd}/{hh}/atmos/gfs.t{hh}z.pgrb2.1p00.f{fff}"
+    },
+    "gefs": {
+      "enabled": true,
+      "provider": "ncep",
+      "kind": "ens",
+      "cycles": [
+        0,
+        12
+      ],
+      "step_hours": 12,
+      "max_hours": 384,
+      "members": [
+        "gec00",
+        "gep01",
+        "gep02",
+        "gep03",
+        "gep04",
+        "gep05",
+        "gep06",
+        "gep07",
+        "gep08",
+        "gep09",
+        "gep10",
+        "gep11",
+        "gep12",
+        "gep13",
+        "gep14",
+        "gep15",
+        "gep16",
+        "gep17",
+        "gep18",
+        "gep19",
+        "gep20",
+        "gep21",
+        "gep22",
+        "gep23",
+        "gep24",
+        "gep25",
+        "gep26",
+        "gep27",
+        "gep28",
+        "gep29",
+        "gep30"
+      ],
+      "url": "https://noaa-gefs-pds.s3.amazonaws.com/gefs.{ymd}/{hh}/atmos/pgrb2ap5/{member}.t{hh}z.pgrb2a.0p50.f{fff}"
+    },
+    "hres": {
+      "enabled": true,
+      "provider": "ecmwf",
+      "kind": "det",
+      "cycles": [
+        0,
+        12
+      ],
+      "step_hours": 12,
+      "max_hours": 240,
+      "url": "https://data.ecmwf.int/forecasts/{ymd}/{hh}z/ifs/0p25/oper/{ymdh}0000-{step}h-oper-fc.grib2"
+    },
+    "eps": {
+      "enabled": true,
+      "provider": "ecmwf",
+      "kind": "ens",
+      "cycles": [
+        0,
+        12
+      ],
+      "step_hours": 24,
+      "max_hours": 360,
+      "aam": false,
+      "workers": 8,
+      "url": "https://data.ecmwf.int/forecasts/{ymd}/{hh}z/ifs/0p25/enfo/{ymdh}0000-{step}h-enfo-ef.grib2"
+    },
+    "aifs": {
+      "enabled": true,
+      "provider": "ecmwf",
+      "kind": "det",
+      "cycles": [
+        0,
+        12
+      ],
+      "step_hours": 12,
+      "max_hours": 360,
+      "url": "https://data.ecmwf.int/forecasts/{ymd}/{hh}z/aifs-single/0p25/oper/{ymdh}0000-{step}h-oper-fc.grib2"
+    },
+    "geps": {
+      "enabled": true,
+      "provider": "msc",
+      "kind": "ens",
+      "cycles": [
+        0,
+        12
+      ],
+      "step_hours": 24,
+      "max_hours": 384,
+      "url": "https://dd.weather.gc.ca/ensemble/geps/grib2/raw/{hh}/{fff}/CMC_geps-raw_{var}_{lev}_latlon0p5x0p5_{ymdh}_P{fff}_allmbrs.grib2"
+    }
+  }
+}
