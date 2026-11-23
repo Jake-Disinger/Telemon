@@ -220,13 +220,7 @@ def main():
         u850.append((u[:, 0] * w[None, :, None]).sum(1) / w.sum())
         u200.append((u[:, 1] * w[None, :, None]).sum(1) / w.sum())
     u850, u200 = np.concatenate(u850), np.concatenate(u200)
-    ds = ra.open_nc(ra.URLS["olr"])
-    to = ra.times(ds)
-    pos = {t.date(): i for i, t in enumerate(to)}
-    idx = [pos[t.date()] for t in tsu]
-    olr_eq = np.ma.filled(ds.variables["olr"][idx[0]:idx[-1] + 1, eqs, :].astype(float), np.nan)
-    olr_eq = olr_eq[[i - idx[0] for i in idx]]          # align day-for-day with the winds
-    ds.close()
+    olr_eq = ra.read_olr_eq([t.date() for t in tsu], eqs)   # (t, lat, lon), one year per request
     olr = (olr_eq * w[None, :, None]).sum(1) / w.sum()
     for nm, x in (("olr", olr), ("u850", u850), ("u200", u200)):
         log.info("raw %-4s: shape %s, %.1f%% finite, range %.1f .. %.1f", nm, x.shape,
