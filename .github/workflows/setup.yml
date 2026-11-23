@@ -1,0 +1,94 @@
+name: Setup (run once)
+
+# Builds the 1991-2020 climatology (stored as a release asset), seeds the observed
+# history from the reanalysis and publishes the first version of the page.
+# Safe to re-run: existing data is kept.
+on:
+  workflow_dispatch:
+    inputs:
+      rebuild:
+        description: "Rebuild the climatology even if it already exists"
+        type: boolean
+        default: false
+      backfill_days:
+        description: "Days of observed history to seed"
+        default: "150"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pipeline/requirements.txt
+
+      - name: Install Python packages
+        run: pip install -r pipeline/requirements.txt
+
+      - name: Run tests
+        run: cd pipeline && python -m pytest tests -q
+
+      - name: Climatology (about 30-90 minutes the first time)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ inputs.rebuild }}" != "true" ] && gh release download climatology -p climatology.npz -D pipeline --clobber; then
+            echo "Using existing climatology."
+          else
+            python pipeline/build_climatology.py --out pipeline/climatology.npz
+            gh release view climatology >/dev/null 2>&1 || \
+              gh release create climatology --title "Climatology 1991-2020" --notes "Built by the Setup workflow. Used by every ingest run."
+            gh release upload climatology pipeline/climatology.npz --clobber
+          fi
+
+      - name: Prepare data-store branch
+        run: |
+          git config --global user.name "telemon-bot"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch --depth=1 origin +refs/heads/data-store:refs/remotes/origin/data-store; then
+            git worktree add --detach site origin/data-store
+          else
+            git worktree add --detach site
+            (cd site && git checkout -q --orphan snapshot && git rm -rq --cached . && find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +)
+          fi
+          rsync -a --delete --exclude .git --exclude data/ --exclude _state/ --exclude .nojekyll web/ site/
+          mkdir -p site/data site/_state && touch site/.nojekyll
+
+      - name: Seed observed history from the reanalysis
+        env:
+          TELE_DATA_DIR: ${{ github.workspace }}/site/data
+          TELE_STATE_DIR: ${{ github.workspace }}/site/_state
+          TELE_CLIMATOLOGY: ${{ github.workspace }}/pipeline/climatology.npz
+        run: python pipeline/backfill_analysis.py --days ${{ inputs.backfill_days }}
+
+      - name: Save data
+        run: |
+          cd site
+          git add -A
+          git checkout -q --orphan snapshot2 2>/dev/null || true
+          git commit -qm "setup $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -f origin HEAD:data-store
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - uses: actions/deploy-pages@v4
+        id: deploy
