@@ -27,9 +27,6 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     timeout-minutes: 350
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -112,5 +109,14 @@ jobs:
         with:
           path: site
 
+  # Publishing runs as its own job (GitHub's recommended layout); doing it in the same
+  # job as the upload can fail with "No artifacts named github-pages were found".
+  deploy:
+    needs: setup
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - uses: actions/deploy-pages@v4
         id: deploy
