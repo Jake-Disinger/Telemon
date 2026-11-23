@@ -39,6 +39,17 @@ def _retry(what, fn):
     raise err
 
 
+def check_payload(arr, what):
+    """PSL sometimes truncates large responses ("DAP DATADDS packet is apparently too
+    short") and netCDF then hands back zeros or fill values without raising. Treat a
+    large read with no variation as a failed download so it is retried."""
+    a = np.ma.asarray(arr)
+    if a.size >= 1000:
+        vals = a.compressed() if np.ma.is_masked(a) else np.asarray(a).ravel()
+        if vals.size == 0 or not np.isfinite(vals).any() or np.nanstd(vals) == 0:
+            raise RuntimeError(f"empty or truncated data from PSL ({what})")
+
+
 class _Var:
     """netCDF variable whose slicing re-opens the dataset and retries on failure."""
     def __init__(self, ds, name):
@@ -47,7 +58,9 @@ class _Var:
     def __getitem__(self, key):
         def read():
             try:
-                return self._ds._handle().variables[self._name][key]
+                out = self._ds._handle().variables[self._name][key]
+                check_payload(out, f"{self._name} {self._ds.url}")
+                return out
             except (OSError, RuntimeError):
                 self._ds.close()          # drop the connection; the retry re-opens it
                 raise
@@ -131,3 +144,42 @@ def read_levels(var, year, levels, lat_slice=slice(None), url=None):
         os.makedirs(CACHE, exist_ok=True)
         np.savez(cpath, t=np.array([t.isoformat() for t in ts]), a=arr.astype(np.float32))
     return ts, arr
+
+
+def read_olr_eq(dates, lat_slice):
+    """Daily interpolated OLR for the given dates -> (t, lat, lon), aligned to `dates`.
+    Read one calendar year per request (large requests get truncated by the server)
+    and cached per year like the other reanalysis reads."""
+    ds = open_nc(URLS["olr"])
+    to = times(ds)
+    pos = {t.date(): i for i, t in enumerate(to)}
+    missing = [d for d in dates if d not in pos]
+    if missing:
+        raise RuntimeError(f"OLR file has no data for {len(missing)} requested days (first {missing[0]})")
+    out = {}
+    for y in sorted({d.year for d in dates}):
+        idx = [pos[d] for d in dates if d.year == y]
+        i0, i1 = min(idx), max(idx)
+        cpath = None
+        if CACHE:
+            key = hashlib.md5(f"{URLS['olr']}|{lat_slice}|{i0}|{i1}".encode()).hexdigest()[:12]
+            cpath = os.path.join(CACHE, f"olr_{y}_{key}.npz")
+            if os.path.exists(cpath):
+                log.info("cached %s", os.path.basename(cpath))
+                block = np.load(cpath)["a"].astype(float)
+            else:
+                cpath_new = cpath
+                cpath = None
+        if cpath is None:
+            log.info("OLR %d", y)
+            block = np.ma.filled(ds.variables["olr"][i0:i1 + 1, lat_slice, :].astype(float), np.nan)
+            if not (100 < np.nanmean(block) < 350):
+                raise RuntimeError(f"OLR {y} looks wrong (mean {np.nanmean(block):.1f} W/m2)")
+            if CACHE:
+                os.makedirs(CACHE, exist_ok=True)
+                np.savez(cpath_new, a=block.astype(np.float32))
+        for d in dates:
+            if d.year == y:
+                out[d] = block[pos[d] - i0]
+    ds.close()
+    return np.stack([out[d] for d in dates])
