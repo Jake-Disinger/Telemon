@@ -86,7 +86,14 @@ jobs:
           rsync -a --delete --exclude .git --exclude data/ --exclude _state/ --exclude .nojekyll web/ site/
           mkdir -p site/data site/_state && touch site/.nojekyll
 
-      - name: Seed observed history from the reanalysis
+      - name: Calibrate AAM (GFS vs reanalysis overlap)
+        env:
+          TELE_STATE_DIR: ${{ github.workspace }}/site/_state
+          TELE_CLIMATOLOGY: ${{ github.workspace }}/pipeline/climatology.npz
+          TELE_CACHE_DIR: ${{ github.workspace }}/pipeline/cache
+        run: python pipeline/calibrate_aam.py --days 150
+
+      - name: Seed observed history from GFS analyses
         env:
           TELE_DATA_DIR: ${{ github.workspace }}/site/data
           TELE_STATE_DIR: ${{ github.workspace }}/site/_state
