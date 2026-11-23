@@ -50,6 +50,26 @@ def box_mean(field, dom):
     return np.nansum(field * w, axis=(-2, -1)) / w.sum()
 
 
+def leading_eofs(X, k):
+    """Leading k EOFs (rows) of a centred data matrix X (time, space).
+
+    Uses the eigen-decomposition of the smaller covariance matrix, which is more
+    robust than an SVD of the full matrix (NumPy's SVD can occasionally fail to
+    converge on large, perfectly valid inputs)."""
+    if not np.isfinite(X).all():
+        raise ValueError("EOF input contains missing/invalid values")
+    nt, ns = X.shape
+    if ns <= nt:
+        w, v = np.linalg.eigh(X.T @ X)
+        e = v[:, ::-1][:, :k].T
+    else:
+        w, v = np.linalg.eigh(X @ X.T)
+        u = v[:, ::-1][:, :k]
+        e = (X.T @ u).T
+        e /= np.linalg.norm(e, axis=1, keepdims=True)
+    return e
+
+
 # ---- EOF-pattern projection (AO, NAO) --------------------------------------
 def eof_pattern(monthly_anoms, dom):
     """Leading EOF of monthly anomalies (time, lat, lon) inside dom.
@@ -65,8 +85,7 @@ def eof_pattern(monthly_anoms, dom):
     X = X[keep]
     X = X - np.nanmean(X, axis=0)
     X = np.where(np.isfinite(X), X, 0.0)                # remaining isolated gaps -> zero anomaly
-    _, _, vt = np.linalg.svd(X, full_matrices=False)
-    e = vt[0]
+    e = leading_eofs(X, 1)[0]
     pc = X @ e
     pattern = np.zeros(m.shape)
     e = np.nan_to_num(e)
@@ -152,11 +171,17 @@ def compute_rmm_eofs(olr_a, u850_a, u200_a):
     """Combined EOF analysis (Wheeler & Hendon 2004) of daily equatorial anomaly
     profiles (time, lon) with the prior-120-day mean already removed.
     Returns eofs (2, 3*nlon), norms (3,), pc_std_full (2,), pc_std_wind (2,)."""
+    names = ("OLR", "u850", "u200")
+    for nm, x in zip(names, (olr_a, u850_a, u200_a)):
+        if x.size == 0 or not np.isfinite(x).all():
+            raise ValueError(f"RMM input {nm} has no valid data ({np.isfinite(x).mean() if x.size else 0:.0%} valid)")
     norms = np.array([np.sqrt(np.mean(np.var(x, axis=0))) for x in (olr_a, u850_a, u200_a)])
+    for nm, v in zip(names, norms):
+        if not np.isfinite(v) or v <= 0:
+            raise ValueError(f"RMM input {nm} has zero variance - its download was probably empty or garbled")
     X = np.concatenate([olr_a / norms[0], u850_a / norms[1], u200_a / norms[2]], axis=1)
     X = X - X.mean(axis=0)
-    _, _, vt = np.linalg.svd(X, full_matrices=False)
-    eofs = vt[:2].copy()
+    eofs = leading_eofs(X, 2)
     nl = olr_a.shape[1]
     # Sign conventions: EOF1 has enhanced convection (negative OLR) over the
     # Maritime Continent (~120E); EOF2 over the western Pacific (~160E).
