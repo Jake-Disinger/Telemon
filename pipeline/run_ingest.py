@@ -77,7 +77,7 @@ def main():
         log.info("another ingest is running; exiting")
         return
 
-    clim = Climatology(cfg["climatology"])
+    clim = Climatology(cfg["climatology"], os.path.join(cfg["state_dir"], "calibration.json"))
     store = Store(cfg["data_dir"], cfg["state_dir"], cfg.get("retention_days", 60))
     keys = [k for k, m in cfg["models"].items() if m.get("enabled", True)] if a.model == "all" else [a.model]
     # analysis model first so the 'observed' history is current for the others

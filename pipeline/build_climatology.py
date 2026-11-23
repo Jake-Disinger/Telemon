@@ -110,6 +110,20 @@ def index_constants(h, aam_monthly_anom):
     ao_p, _ = ix.eof_pattern(h["mon_a1000"], ix.AO_DOMAIN)
     nao_p, _ = ix.eof_pattern(h["mon_a500"], ix.NAO_DOMAIN)
     ao_p, nao_p = ix.orient_ao(ao_p), ix.orient_nao(nao_p)
+    # sanity checks: AO = polar cap vs mid-latitudes, NAO = Iceland vs Azores
+    if not ix.dipole_ok(ao_p, (85, 0), (45, 180)) and not ix.dipole_ok(ao_p, (85, 0), (45, 0)):
+        log.warning("AO EOF failed the dipole check; check the climatology data")
+    if ix.dipole_ok(nao_p, (65, 340), (40, 335)):
+        log.info("NAO EOF passed the Iceland/Azores dipole check")
+    else:
+        log.warning("NAO EOF failed the Iceland/Azores dipole check; using the box-difference NAO "
+                    "(500 hPa, 35-45N 80-10W minus 55-70N 70-10W)")
+        nao_p = ix.orient_nao(ix.box_pattern(ix.NAO_SOUTH, ix.NAO_NORTH))
+    for name, p in (("AO", ao_p), ("NAO", nao_p)):
+        def at(la, lo):
+            return p[int(np.argmin(np.abs(LAT - la))), int(round(lo / 2.5)) % 144]
+        log.info("%s loadings: 85N %+.3f | 65N,20W %+.3f | 40N,25W %+.3f | 45N,180 %+.3f",
+                 name, at(85, 0), at(65, 340), at(40, 335), at(45, 180))
     raw = {
         "ao": ix.project(h["mon_a1000"], ao_p),
         "nao": ix.project(h["mon_a500"], nao_p),

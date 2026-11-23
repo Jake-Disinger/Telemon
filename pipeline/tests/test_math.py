@@ -118,3 +118,35 @@ def test_idx_parsers_and_urls():
     assert g.url(run, 6, "gep01").endswith("gefs.20261123/00/atmos/pgrb2ap5/gep01.t00z.pgrb2a.0p50.f006")
     c = make_source("geps", cfg["models"]["geps"], [850])
     assert c.url(run, 24, "HGT", "ISBL_0500").endswith("/00/024/CMC_geps-raw_HGT_ISBL_0500_latlon0p5x0p5_2026112300_P024_allmbrs.grib2")
+
+
+def test_climatology_survives_missing_values():
+    """NOAA files occasionally have gaps / fill values; the build must skip them."""
+    def gappy():
+        for i, (ts, z5, z1) in enumerate(_synthetic_years(4)):
+            z5 = z5.copy()
+            z5[10] = np.nan                    # a fully missing day
+            z5[40:43, 5:9, 100:110] = np.nan   # a patch of missing points
+            z5[200, 3, 3] = -9.96921e36        # netCDF fill value that wasn't masked
+            if i == 2:
+                z5[60:90] = np.nan             # a whole missing month
+            yield ts, z5, z1
+    h = bc.height_climo(gappy())
+    assert np.isfinite(h["z500_mean"]).all() and np.isfinite(h["z500_std"]).all()
+    ao_p, nao_p, names, mu, sd = bc.index_constants(h, rng.normal(size=len(h["mon_a500"])))
+    assert np.isfinite(nao_p).all() and np.isfinite(ao_p).all()
+    assert np.isfinite(mu).all() and np.isfinite(sd).all() and (sd > 0).all()
+    i = int(np.argmin(np.abs(LAT - 65))); j = int(np.argmin(np.abs(LON - 340)))
+    assert nao_p[i, j] < 0
+
+
+def test_rmm_climo_survives_missing_values():
+    n = 1500
+    ts = [dt.datetime(2000, 1, 1) + dt.timedelta(days=i) for i in range(n)]
+    lon = np.deg2rad(LON); ph = 2 * np.pi * np.arange(n)[:, None] / 45
+    olr = 230 - 20 * np.cos(lon[None] - ph) + rng.normal(0, 3, (n, 144))
+    olr[100:103] = np.nan; olr[500, 7] = 1e20
+    u8 = 3 * np.cos(lon[None] - ph) + rng.normal(0, .5, (n, 144))
+    u2 = -6 * np.cos(lon[None] - ph) + rng.normal(0, 1, (n, 144))
+    means, eofs, norms, pcstd, pcw = bc.rmm_climo(ts, olr, u8, u2)
+    assert np.isfinite(eofs).all() and np.isfinite(means["olr"]).all() and np.isfinite(pcstd).all()

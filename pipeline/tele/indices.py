@@ -85,12 +85,39 @@ def eof_pattern(monthly_anoms, dom):
     X = X[keep]
     X = X - np.nanmean(X, axis=0)
     X = np.where(np.isfinite(X), X, 0.0)                # remaining isolated gaps -> zero anomaly
+    # Remove the long-term trend at every point and the domain-uniform component
+    # (heights rising everywhere with warming); otherwise the leading EOF is a monopole
+    # trend pattern instead of the NAO/AO dipole.
+    t = np.arange(len(X), dtype=float); t -= t.mean()
+    X = X - np.outer(t, (t @ X) / (t @ t))
+    v = sw[m] / np.linalg.norm(sw[m])
+    X = X - np.outer(X @ v, v)
     e = leading_eofs(X, 1)[0]
     pc = X @ e
     pattern = np.zeros(m.shape)
     e = np.nan_to_num(e)
     pattern[m] = e
     return pattern, float(pc.std())
+
+
+def box_pattern(south, north):
+    """Projection pattern equivalent to box_mean(a, south) - box_mean(a, north)."""
+    w = COSLAT[:, None] * np.ones(LON.size)[None, :]
+    S, N = domain_mask(south), domain_mask(north)
+    return (S * w / (w * S).sum() - N * w / (w * N).sum()) / np.sqrt(COSLAT)[:, None]
+
+
+NAO_SOUTH = dict(lat=(35, 45), lon=(280, 350))     # Azores / subtropical Atlantic ridge
+NAO_NORTH = dict(lat=(55, 70), lon=(290, 350))     # Iceland / Greenland low
+
+
+def dipole_ok(pattern, p1, p2):
+    """True if the pattern has opposite-signed, substantial loadings at the two points."""
+    def at(la, lo):
+        return pattern[int(np.argmin(np.abs(LAT - la))), int(np.argmin(np.abs(LON - lo)))]
+    a, b = at(*p1), at(*p2)
+    big = np.abs(pattern).max()
+    return a * b < 0 and min(abs(a), abs(b)) > 0.25 * big
 
 
 def project(anom, pattern):

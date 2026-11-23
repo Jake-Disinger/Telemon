@@ -1,6 +1,9 @@
 """Climatology container: loads climatology.npz written by build_climatology.py and
 turns raw model fields into standardized index values."""
 import datetime as dt
+import json
+import os
+
 import numpy as np
 from . import indices as ix
 
@@ -20,8 +23,13 @@ def harmonic_smooth(daily, nharm=3):
 
 
 class Climatology:
-    def __init__(self, path):
+    def __init__(self, path, calibration=None):
         c = np.load(path, allow_pickle=False)
+        # model-vs-reanalysis AAM offset written by calibrate_aam.py (kg m2 s-1)
+        self.aam_offset = 0.0
+        if calibration and os.path.exists(calibration):
+            with open(calibration) as f:
+                self.aam_offset = float(json.load(f).get("aam_offset", 0.0))
         self.z500_mean = c["z500_mean"]
         self.z500_std = c["z500_std"]
         self.z1000_mean = c["z1000_mean"]
@@ -52,7 +60,7 @@ class Climatology:
             out["ao"] = float(ix.project(z1000 - self.z1000_mean[k], self.ao_pattern))
         if u is not None and all(l in u for l in self.aam_levels):
             m = ix.relative_aam(np.stack([u[l] for l in self.aam_levels]), self.aam_levels)
-            out["aam"] = float(m - self.aam_mean[k])
+            out["aam"] = float(m - self.aam_offset - self.aam_mean[k])
         return out
 
     def standardize(self, name, raw):

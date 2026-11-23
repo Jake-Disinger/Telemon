@@ -114,7 +114,7 @@ def main():
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     cfg = load_config(a.config)
-    clim = Climatology(cfg["climatology"])
+    clim = Climatology(cfg["climatology"], os.path.join(cfg["state_dir"], "calibration.json"))
     store = Store(cfg["data_dir"], cfg["state_dir"])
     n = backfill(cfg, clim, store, a.days)
     if n == 0:
