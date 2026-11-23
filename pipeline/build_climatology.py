@@ -43,22 +43,48 @@ def doy_mean(sums, counts):
     return out
 
 
+def clean(a, lo, hi):
+    """Missing or fill values (and anything physically impossible) -> NaN."""
+    a = np.array(a, dtype=float)
+    a[~np.isfinite(a) | (a < lo) | (a > hi)] = np.nan
+    return a
+
+
+def doy_mean_pts(sums, counts):
+    """Per-gridpoint version of doy_mean: counts has the same shape as sums."""
+    out = sums / np.maximum(counts, 1)
+    out[counts == 0] = np.nan
+    # fill empty slots from neighbouring days (then anything left with the overall mean)
+    for k in range(366):
+        bad = np.isnan(out[k])
+        if bad.any():
+            nb = np.nanmean(np.stack([out[(k - 1) % 366], out[(k + 1) % 366]]), axis=0)
+            out[k][bad] = nb[bad]
+    allm = np.nanmean(out, axis=0)
+    return np.where(np.isnan(out), allm, out)
+
+
 def height_climo(year_data):
     """year_data: iterable of (times, z500 (t,37,144), z1000 (t,37,144)).
-    Returns dict with daily mean/std (366,73,144) and monthly anomaly stacks."""
-    s = {k: np.zeros((366, 37, 144)) for k in ("s5", "q5", "s1")}
-    n = np.zeros(366)
+    Returns dict with daily mean/std (366,73,144) and monthly anomaly stacks.
+    Missing values are skipped (NOAA's daily files have a few gaps)."""
+    s = {k: np.zeros((366, 37, 144)) for k in ("s5", "q5", "s1", "n5", "n1")}
     monthly = []                                           # (year, month, z500, z1000)
     for ts, z5, z1 in year_data:
+        z5, z1 = clean(z5, 3000, 7000), clean(z1, -1500, 1500)
         for i, t in enumerate(ts):
             k = cal_index(t)
-            s["s5"][k] += z5[i]; s["q5"][k] += z5[i] ** 2; s["s1"][k] += z1[i]; n[k] += 1
+            g5, g1 = np.isfinite(z5[i]), np.isfinite(z1[i])
+            s["s5"][k] += np.where(g5, z5[i], 0); s["q5"][k] += np.where(g5, z5[i], 0) ** 2; s["n5"][k] += g5
+            s["s1"][k] += np.where(g1, z1[i], 0); s["n1"][k] += g1
         months = np.array([t.month for t in ts])
-        for m in range(1, 13):
-            sel = months == m
-            if sel.any():
-                monthly.append((ts[0].year, m, z5[sel].mean(0), z1[sel].mean(0)))
-    e5, q5, e1 = doy_mean(s["s5"], n), doy_mean(s["q5"], n), doy_mean(s["s1"], n)
+        with np.errstate(all="ignore"):
+            for m in range(1, 13):
+                sel = months == m
+                if sel.any():
+                    monthly.append((ts[0].year, m, np.nanmean(z5[sel], 0), np.nanmean(z1[sel], 0)))
+    n = s["n5"]
+    e5, q5, e1 = doy_mean_pts(s["s5"], n), doy_mean_pts(s["q5"], n), doy_mean_pts(s["s1"], s["n1"])
     m5 = harmonic_smooth(e5)
     sd5 = np.sqrt(np.maximum(harmonic_smooth(np.maximum(q5 - e5 ** 2, 1.0)), 1.0))
     m1 = harmonic_smooth(e1)
@@ -92,8 +118,8 @@ def index_constants(h, aam_monthly_anom):
         "aam": np.asarray(aam_monthly_anom),
     }
     names = ["nao", "ao", "pna", "epo", "aam"]
-    mu = np.array([0.0 if k == "aam" else raw[k].mean() for k in names])
-    sd = np.array([raw[k].std() for k in names])
+    mu = np.array([0.0 if k == "aam" else np.nanmean(raw[k]) for k in names])
+    sd = np.array([np.nanstd(raw[k]) for k in names])
     return ao_p, nao_p, names, mu, sd
 
 
@@ -113,15 +139,21 @@ def aam_climo(times_m, u_m, levels):
     return daily, anom
 
 
+LIMITS = {"olr": (50, 500), "u850": (-150, 150), "u200": (-200, 200)}
+
+
 def rmm_climo(ts, olr, u850, u200):
     """ts: daily datetimes; profiles (t, 144). Returns eq means + RMM EOF quantities."""
     ks = np.array([cal_index(t) for t in ts])
     means, anoms = {}, {}
     for name, x in (("olr", olr), ("u850", u850), ("u200", u200)):
-        s = np.zeros((366, 144)); n = np.zeros(366)
-        np.add.at(s, ks, x); np.add.at(n, ks, 1)
-        mean = harmonic_smooth(doy_mean(s, n), 3)
+        x = clean(x, *LIMITS[name])
+        good = np.isfinite(x)
+        s = np.zeros((366, 144)); n = np.zeros((366, 144))
+        np.add.at(s, ks, np.where(good, x, 0)); np.add.at(n, ks, good)
+        mean = harmonic_smooth(doy_mean_pts(s, n), 3)
         a = x - mean[ks]
+        a = np.where(np.isfinite(a), a, 0.0)          # isolated gaps -> zero anomaly
         # remove previous 120-day mean
         cs = np.cumsum(np.vstack([np.zeros((1, 144)), a]), axis=0)
         prior = np.full_like(a, np.nan)
