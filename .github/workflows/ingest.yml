@@ -27,9 +27,8 @@ jobs:
   ingest:
     runs-on: ubuntu-latest
     timeout-minutes: 340
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+    outputs:
+      changed: ${{ steps.save.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
 
@@ -91,6 +90,14 @@ jobs:
         with:
           path: site
 
+  # Publishing runs as its own job (GitHub's recommended layout).
+  deploy:
+    needs: ingest
+    if: needs.ingest.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - uses: actions/deploy-pages@v4
         id: deploy
-        if: steps.save.outputs.changed == 'true'
