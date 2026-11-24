@@ -50,7 +50,7 @@ def box_mean(field, dom):
     return np.nansum(field * w, axis=(-2, -1)) / w.sum()
 
 
-def leading_eofs(X, k):
+def leading_eofs(X, k, return_vals=False):
     """Leading k EOFs (rows) of a centred data matrix X (time, space).
 
     Uses the eigen-decomposition of the smaller covariance matrix, which is more
@@ -67,6 +67,8 @@ def leading_eofs(X, k):
         u = v[:, ::-1][:, :k]
         e = (X.T @ u).T
         e /= np.linalg.norm(e, axis=1, keepdims=True)
+    if return_vals:
+        return e, np.maximum(w[::-1][:k], 0) / max(nt - 1, 1)
     return e
 
 
@@ -233,3 +235,86 @@ def mjo_phase(rmm1, rmm2):
     ang = np.degrees(np.arctan2(rmm2, rmm1))          # -180..180
     phase = (np.floor((ang + 180.0) / 45.0).astype(int) % 8) + 1
     return phase, np.hypot(rmm1, rmm2)
+
+
+# ---- CPC-style rotated PCA (NAO, PNA) ----------------------------------------
+# CPC: NAO and PNA are modes of a rotated principal component analysis (RPCA) of
+# standardized monthly 500 hPa anomalies over 20-90N, done separately for each calendar
+# month using that month and its neighbours (Barnston & Livezey 1987). Daily values are
+# projections of daily standardized anomalies onto that month's loading pattern,
+# normalized by the standard deviation of the monthly index.
+RPCA_DOMAIN = dict(lat=(20, 90), lon=(0, 360))
+N_MODES = 10
+
+
+def varimax(Phi, gamma=1.0, iters=100, tol=1e-7):
+    """Varimax rotation of loadings Phi (npts, k)."""
+    p, k = Phi.shape
+    R = np.eye(k)
+    d = 0.0
+    for _ in range(iters):
+        L = Phi @ R
+        u, s, vt = np.linalg.svd(Phi.T @ (L ** 3 - (gamma / p) * L @ np.diag(np.diag(L.T @ L))))
+        R = u @ vt
+        d_old, d = d, s.sum()
+        if d_old and d / d_old < 1 + tol:
+            break
+    return Phi @ R
+
+
+def _gauss(lat, lon, la0, lo0, rla=10.0, rlo=25.0):
+    dlon = (lon - lo0 + 180) % 360 - 180
+    return np.exp(-((lat - la0) / rla) ** 2 - (dlon / rlo) ** 2)
+
+
+def nao_template():
+    L, N = np.meshgrid(LAT, LON, indexing="ij")
+    return -_gauss(L, N, 65, 340) + _gauss(L, N, 40, 330)           # positive NAO
+
+
+def pna_template():
+    L, N = np.meshgrid(LAT, LON, indexing="ij")
+    return (_gauss(L, N, 20, 200, 8, 20) - _gauss(L, N, 45, 195) + _gauss(L, N, 55, 245)
+            - _gauss(L, N, 32, 275, 8, 20))                            # positive PNA
+
+
+def rpca_month(anoms, years):
+    """anoms: monthly 500 hPa anomalies (n, lat, lon) for one 3-month calendar window.
+    Returns dict(sigma, nao, pna, nao_sd, pna_sd, nao_match, pna_match)."""
+    m = domain_mask(RPCA_DOMAIN)
+    X = np.array(anoms, float)[:, m]
+    X = np.where(np.isfinite(X), X, 0.0)
+    # remove the linear trend over the years at each point, then standardize
+    t = np.asarray(years, float); t = t - t.mean()
+    X = X - X.mean(axis=0)
+    if np.ptp(t) > 0:
+        X = X - np.outer(t, (t @ X) / (t @ t))
+    sig = X.std(axis=0)
+    sig = np.where(sig > 1e-6, sig, 1.0)
+    sw = np.sqrt(COSLAT)[:, None] * np.ones(LON.size)[None, :]
+    Z = X / sig * sw[m]
+    e, ev = leading_eofs(Z, N_MODES, return_vals=True)
+    rot = varimax((e * np.sqrt(ev)[:, None]).T)                       # (npts, k)
+    out = {"sigma": np.ones(m.shape)}
+    out["sigma"][m] = sig
+    used = set()
+    for name, tmpl in (("nao", nao_template()), ("pna", pna_template())):
+        tv = (tmpl * sw)[m]
+        cors = [abs(np.corrcoef(rot[:, i], tv)[0, 1]) if i not in used else -1 for i in range(N_MODES)]
+        i = int(np.argmax(cors)); used.add(i)
+        v = rot[:, i] / np.linalg.norm(rot[:, i])
+        if np.corrcoef(v, tv)[0, 1] < 0:
+            v = -v
+        pat = np.zeros(m.shape); pat[m] = v
+        pcs = Z @ v
+        out[name] = pat
+        out[name + "_sd"] = float(pcs.std())
+        out[name + "_match"] = float(cors[i])
+    return out
+
+
+def rpca_project(anom, sigma, pattern, sd):
+    """Standardized index for one anomaly field: projection of the standardized,
+    sqrt(cos)-weighted anomaly onto a unit-norm RPCA pattern, divided by the monthly sd."""
+    sw = np.sqrt(COSLAT)[:, None]
+    return float(np.nansum(anom / sigma * sw * pattern) / sd)

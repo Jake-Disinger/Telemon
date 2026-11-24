@@ -102,7 +102,22 @@ def height_climo(year_data):
         f1 = np.zeros((73, 144)); f1[NH] = z1 - z1000_mean[days, NH].mean(0)
         a5.append(f5); a1.append(f1); mids.append(days[len(days) // 2])
     return dict(z500_mean=z500_mean, z500_std=z500_std, z1000_mean=z1000_mean,
-                mon_a500=np.array(a5), mon_a1000=np.array(a1), mon_mid=np.array(mids))
+                mon_a500=np.array(a5), mon_a1000=np.array(a1), mon_mid=np.array(mids),
+                mon_year=np.array([y for y, m, _, _ in monthly]), mon_month=np.array([m for _, m, _, _ in monthly]))
+
+
+def rpca_climo(h):
+    """CPC-style NAO/PNA loading patterns for each calendar month (3-month windows)."""
+    out = {k: [] for k in ("sigma", "nao", "pna", "nao_sd", "pna_sd")}
+    for m in range(1, 13):
+        win = {(m - 2) % 12 + 1, m, m % 12 + 1}
+        sel = np.isin(h["mon_month"], list(win))
+        r = ix.rpca_month(h["mon_a500"][sel], h["mon_year"][sel] + (h["mon_month"][sel] - 1) / 12.0)
+        for k in out:
+            out[k].append(r[k])
+        log.info("RPCA %s: NAO template match %.2f, PNA template match %.2f",
+                 calendar.month_abbr[m], r["nao_match"], r["pna_match"])
+    return {k: np.array(v) for k, v in out.items()}
 
 
 def index_constants(h, aam_monthly_anom):
@@ -228,6 +243,10 @@ def main():
     means, eofs, norms, pcstd, pcstd_w = rmm_climo(tsu, olr, u850, u200)
 
     ao_p, nao_p, names, mu, sd = index_constants(h, aam_anom)
+    rp = rpca_climo(h)
+    # NAO/PNA from the RPCA patterns are already standardized (monthly sd = 1)
+    for k in ("nao", "pna"):
+        mu[names.index(k)], sd[names.index(k)] = 0.0, 1.0
     np.savez_compressed(
         a.out,
         z500_mean=h["z500_mean"], z500_std=h["z500_std"], z1000_mean=h["z1000_mean"],
@@ -235,6 +254,8 @@ def main():
         aam_levels=np.array(levels), aam_mean=aam_daily,
         eq_olr_mean=means["olr"], eq_u850_mean=means["u850"], eq_u200_mean=means["u200"],
         rmm_eofs=eofs, rmm_norms=norms, rmm_pcstd=pcstd, rmm_pcstd_wind=pcstd_w,
+        rpca_sigma=rp["sigma"].astype(np.float32), nao_rp=rp["nao"].astype(np.float32), pna_rp=rp["pna"].astype(np.float32),
+        nao_rp_sd=rp["nao_sd"], pna_rp_sd=rp["pna_sd"],
         period=np.array([a.start, a.end]))
     log.info("wrote %s", a.out)
 

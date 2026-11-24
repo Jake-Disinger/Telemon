@@ -44,6 +44,26 @@ class Climatology:
         self.rmm_norms = c["rmm_norms"]
         self.rmm_pcstd = c["rmm_pcstd"]
         self.rmm_pcstd_wind = c["rmm_pcstd_wind"]
+        # CPC-style rotated-PCA patterns for NAO/PNA (absent in older climatology files)
+        self.rpca = None
+        if "nao_rp" in c.files:
+            self.rpca = {"sigma": c["rpca_sigma"], "nao": c["nao_rp"], "pna": c["pna_rp"],
+                         "nao_sd": c["nao_rp_sd"], "pna_sd": c["pna_rp_sd"]}
+
+    def month_weights(self, valid):
+        """Blend neighbouring calendar-month patterns so values don't jump at month ends."""
+        import calendar
+        m, d = valid.month, valid.day
+        n_days = calendar.monthrange(valid.year, m)[1]
+        mid = (n_days + 1) / 2.0
+        f = (d - mid) / n_days                           # -0.5 .. +0.5
+        other = m % 12 + 1 if f >= 0 else (m - 2) % 12 + 1
+        return [(m - 1, 1.0 - abs(f)), (other - 1, abs(f))]
+
+    def rpca_index(self, name, valid, anom):
+        r = self.rpca
+        return sum(w * ix.rpca_project(anom, r["sigma"][k], r[name][k], r[name + "_sd"][k])
+                   for k, w in self.month_weights(valid))
 
     # raw (un-normalized) indices for one valid time ---------------------------
     def raw_indices(self, valid, z500=None, z1000=None, u=None):
@@ -53,8 +73,12 @@ class Climatology:
         out = dict.fromkeys(INDEX_NAMES)
         if z500 is not None:
             a = z500 - self.z500_mean[k]
-            out["nao"] = float(ix.project(a, self.nao_pattern))
-            out["pna"] = float(ix.pna_raw(a / self.z500_std[k]))
+            if self.rpca is not None:
+                out["nao"] = self.rpca_index("nao", valid, a)
+                out["pna"] = self.rpca_index("pna", valid, a)
+            else:
+                out["nao"] = float(ix.project(a, self.nao_pattern))
+                out["pna"] = float(ix.pna_raw(a / self.z500_std[k]))
             out["epo"] = float(ix.epo_raw(a))
         if z1000 is not None:
             out["ao"] = float(ix.project(z1000 - self.z1000_mean[k], self.ao_pattern))

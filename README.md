@@ -78,13 +78,13 @@ Each model run is interpolated to a 2.5° grid. Anomalies are taken against a 19
 | Index | Definition |
 |---|---|
 | **AO** | Daily 1000 hPa anomalies, 20–90N, projected on the leading EOF of monthly anomalies (CPC method). Positive means low heights over the pole. |
-| **NAO** | Daily 500 hPa anomalies projected on the leading EOF of monthly 500 hPa anomalies over 20–80N, 90W–40E. Positive means a low near Iceland. |
-| **PNA** | Wallace–Gutzler point formula with standardized Z500: ¼[Z(20N,160W) − Z(45N,165W) + Z(55N,115W) − Z(30N,85W)]. |
+| **NAO** | CPC method: the NAO mode of a varimax-rotated PCA of standardized monthly 500 hPa anomalies, 20–90N, 1991–2020, with a separate pattern for each calendar month (3-month windows). Daily values are projections onto that month's pattern, blended between neighbouring months. |
+| **PNA** | CPC method: the PNA mode of the same rotated PCA. |
 | **EPO** | Z500 anomaly over 20–35N,160–125W minus 55–65N,160–125W. A ridge over Alaska gives a negative EPO. |
 | **AAM** | Global relative angular momentum, (2πa³/g)∬[u]cos²φ dφ dp, over 850–50 hPa, shown as a standardized anomaly. The tooltip gives the raw anomaly ×10²⁴ kg m² s⁻¹. |
 | **MJO** | Wheeler & Hendon (2004) RMM. Inputs are 15S–15N OLR, u850 and u200 anomalies, with the prior 120-day mean removed. Days after the init time use the forecast itself, as in Gottschalck et al. 2010. The EOFs are computed from 1991–2020 data, with sign conventions matching BoM/CPC. |
 
-NAO, AO, PNA, EPO and AAM are divided by the standard deviation of the 1991–2020 monthly-mean index. This is CPC's convention, so daily values sit on the familiar ±3 scale.
+AO, EPO and AAM are divided by the standard deviation of the 1991–2020 monthly-mean index. NAO and PNA are scaled by the standard deviation of their monthly index for that calendar month. Both are CPC's convention, so daily values sit on the familiar ±3 scale. Setup's last step downloads CPC's official daily NAO, AO and PNA and logs how closely the site's observed values agree (`data/verification.json`).
 
 The black **observed** line comes from GFS f000 analyses, set by `analysis_model` in `config.json`. Its history is seeded from Reanalysis-1 by `backfill_analysis.py`.
 
