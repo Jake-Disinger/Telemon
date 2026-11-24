@@ -23,9 +23,9 @@
     const C = ctx.C, cfg = C.bsr, man = ctx.manifest();
     const saved = readLS();
     const st = Object.assign({ source: "models", lag: cfg.lagDays, field: "mslp", model: "analysis", run: null, idx: null, adjust: false }, saved.view || {});
-    const overlay = Object.assign({}, cfg.overlay, saved.overlay || {});
+    const overlay = Object.assign({}, cfg.overlay, saved.overlay2 || {});
     const cals = Object.assign({}, ...cfg.opc.filter(o => o.cal).map(o => ({ [o.key]: o.cal })), saved.cal || {});
-    const save = () => writeLS({ view: { source: st.source, lag: st.lag, field: st.field, model: st.model }, overlay, cal: cals });
+    const save = () => writeLS({ view: { source: st.source, lag: st.lag, field: st.field, model: st.model }, overlay2: overlay, cal: cals });
     const [coast, us] = await Promise.all([loadGeo("coast"), loadGeo("us")]);
     const maps = (man.maps) || {};
     const MODEL_OPTS = [["analysis", "Observed (GFS analysis)"]].concat(Object.keys(C.models).map(k => [k, C.models[k].label.replace(" MEAN", "") + (C.models[k].kind === "ens" ? " mean" : "")]));
@@ -39,11 +39,11 @@
         <div class="ctl right"><button id="bsrAdjBtn">Adjust overlay</button></div>
       </div>
       <div class="card adjust" id="bsrAdj" hidden>
-        <b>US overlay placement</b> — the US center (39N 96W) is moved to the point below, keeping its true shape and size.
+        <b>US overlay placement</b> — where the center of the US map (39N 96W) lands, its size relative to the chart, and its rotation. The default matches the classic Bering Sea Rule charts.
         <div class="adjrow">
           <label>Latitude <input type="range" id="ovLat" min="35" max="62" step="0.25"><span id="ovLatV"></span></label>
           <label>Longitude <input type="range" id="ovLon" min="160" max="205" step="0.25"><span id="ovLonV"></span></label>
-          <label>Size <input type="range" id="ovScale" min="0.7" max="1.6" step="0.01"><span id="ovScaleV"></span></label>
+          <label>Size <input type="range" id="ovScale" min="0.8" max="1.7" step="0.01"><span id="ovScaleV"></span></label>
           <label>Rotate <input type="range" id="ovRot" min="-20" max="20" step="0.5"><span id="ovRotV"></span></label>
           <button id="ovReset">Reset</button><button id="ovCopy">Copy settings</button>
         </div>
