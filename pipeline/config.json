@@ -115,5 +115,20 @@
       "max_hours": 384,
       "url": "https://dd.weather.gc.ca/ensemble/geps/grib2/raw/{hh}/{fff}/CMC_geps-raw_{var}_{lev}_latlon0p5x0p5_{ymdh}_P{fff}_allmbrs.grib2"
     }
+  },
+  "maps": {
+    "enabled": true,
+    "max_hours": 360,
+    "retention_days": 10,
+    "analysis_days": 45
+  },
+  "typhoons": {
+    "enabled": true,
+    "refresh_hours": 6,
+    "days": 60,
+    "urls": [
+      "https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-stewardship-ibtracs/v04r01/access/csv/ibtracs.last3years.list.v04r01.csv",
+      "https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-stewardship-ibtracs/v04r01/access/csv/ibtracs.ACTIVE.list.v04r01.csv"
+    ]
   }
 }

@@ -4,7 +4,9 @@
   "use strict";
   const C = window.TELE_CONFIG, TC = window.TeleCharts, DAY = TC.DAY, MON = TC.MON;
   const EMBED = window.TELE_EMBED || null;              // single-file demo build
-  const TABS = ["overview", "nao", "ao", "pna", "epo", "aam", "mjo", "outlooks"];
+  const TABS = ["overview", "nao", "ao", "pna", "epo", "aam", "mjo", "gwo", "bsr", "typhoon", "outlooks"];
+  const STANDALONE = ["outlooks", "bsr", "typhoon"];          // tabs with their own controls
+  const TAB_LABEL = { overview: "Overview", outlooks: "CPC Outlooks", gwo: "GWO", bsr: "Bering Sea Rule", typhoon: "Typhoon Rule" };
   const LINE_IDX = ["nao", "ao", "pna", "epo", "aam"];
   const MODEL_KEYS = Object.keys(C.models);
   const $ = s => document.querySelector(s);
@@ -23,8 +25,10 @@
     if (EMBED) {
       if (path === "manifest.json") return EMBED.manifest;
       if (path === "analysis.json") return EMBED.analysis;
+      if (EMBED.files && path in EMBED.files) return EMBED.files[path];
       const m = path.match(/runs\/(\w+)\/(\d+)\.json/);
-      return m ? EMBED.runs[m[1]][m[2]] : null;
+      if (m) return EMBED.runs[m[1]][m[2]];
+      throw new Error(path + " not in demo bundle");
     }
     const r = await fetch(C.dataPath + path, nocache ? { cache: "no-store" } : {});
     if (!r.ok) throw new Error(path + " " + r.status);
@@ -83,7 +87,7 @@
     nav.innerHTML = "";
     TABS.forEach(t => {
       const b = document.createElement("button");
-      b.textContent = t === "overview" ? "Overview" : t === "outlooks" ? "CPC Outlooks" : C.indices[t].abbr;
+      b.textContent = TAB_LABEL[t] || C.indices[t].abbr;
       b.dataset.tab = t;
       b.className = t === state.tab ? "on" : "";
       b.onclick = () => { state.tab = t; render(); };
@@ -101,8 +105,8 @@
     });
   }
   function buildControls() {
-    const isIdx = !["overview", "outlooks"].includes(state.tab);
-    $("#controls").style.display = state.tab === "outlooks" ? "none" : "";
+    const isIdx = !["overview"].concat(STANDALONE).includes(state.tab);
+    $("#controls").style.display = STANDALONE.includes(state.tab) ? "none" : "";
     $("#viewGroup").style.display = isIdx ? "" : "none";
     seg("#viewSeg", [["all", "All Models"], ["model", "Single Model"], ["trend", "Run Trend"]], state.view, v => { state.view = v; render(); });
     const showModel = isIdx && state.view !== "all";
@@ -320,6 +324,118 @@
     return { used, windOnly };
   }
 
+  /* ---------- GWO ------------------------------------------------------------ */
+  // PSL standard deviations: AAM 1.2e25 kg m2 s-1 (5-day mean), tendency 1.4e19 kg m2 s-2.
+  // With x already in sigma units, y = (dx/dt in sigma/day) * (1.2e25 / 1.4e19 / 86400 s).
+  const GWO_TEND = 1.2e25 / 1.4e19 / 86400;
+  function dailyMeans(tsMs, vals) {
+    const m = new Map();
+    tsMs.forEach((t, i) => { const v = vals[i]; if (v == null) return; const d = Math.floor(t / DAY) * DAY; const a = m.get(d) || [0, 0]; a[0] += v; a[1]++; m.set(d, a); });
+    const out = new Map(); for (const [d, a] of m) out.set(d, a[0] / a[1]); return out;
+  }
+  function obsAamDaily() {
+    if (!analysis || !analysis.aam) return new Map();
+    return dailyMeans(analysis.times.map(runMs), analysis.aam);
+  }
+  function gwoFromDaily(series, d0, d1) {
+    // series: Map dayMs -> AAM (sigma). Returns [{t, x, y}] for days d0..d1 (inclusive).
+    const days = []; for (let d = d0 - 6 * DAY; d <= d1 + 0 * DAY; d += DAY) days.push(d);
+    let v = days.map(d => series.has(d) ? series.get(d) : null);
+    for (let i = 0; i < v.length; i++) if (v[i] == null) {           // fill short gaps linearly
+      let a = i - 1, b = i + 1; while (b < v.length && v[b] == null) b++;
+      if (a >= 0 && v[a] != null && b < v.length && b - a <= 4) for (let k = i; k < b; k++) v[k] = v[a] + (v[b] - v[a]) * (k - a) / (b - a);
+    }
+    const sm = v.map((_, i) => { const w = [-2, -1, 0, 1, 2].map(k => v[i + k]).filter(x => x != null); return w.length >= 3 ? w.reduce((p, q) => p + q, 0) / w.length : null; });
+    const ok = i => i >= 0 && i < sm.length && sm[i] != null;
+    const out = [];
+    days.forEach((d, i) => {
+      if (d < d0 || !ok(i)) return;
+      let tend = null;
+      if (ok(i - 2) && ok(i - 1) && ok(i + 1) && ok(i + 2)) tend = (sm[i - 2] - 8 * sm[i - 1] + 8 * sm[i + 1] - sm[i + 2]) / 12;
+      else if (ok(i - 1) && ok(i + 1)) tend = (sm[i + 1] - sm[i - 1]) / 2;
+      else if (ok(i - 1)) tend = sm[i] - sm[i - 1];
+      else if (ok(i + 1)) tend = sm[i + 1] - sm[i];
+      if (tend != null) out.push({ t: d, x: sm[i], y: tend * GWO_TEND });
+    });
+    return out;
+  }
+  function gwoRun(j, member) {
+    const d = j && j.indices.aam;
+    if (!d) return null;
+    const vals = member === undefined ? (d.value || d.mean) : d.members[member];
+    const fc = dailyMeans(times(j), vals), t0 = Math.floor(runMs(j.run) / DAY) * DAY;
+    const obs = obsAamDaily(), series = new Map();
+    for (const [k, v] of obs) if (k <= t0) series.set(k, v);
+    for (const [k, v] of fc) if (k > t0 || !series.has(k)) series.set(k, v);
+    const last = Math.max(...fc.keys());
+    return gwoFromDaily(series, t0, last).map(p => Object.assign(p, { lead: Math.round((p.t - t0) / DAY) }));
+  }
+  async function gwoView(phaseBox, ampBox) {
+    const cyc = state.cycle, tracks = [], ampSeries = [], legend = [], used = [], missing = [];
+    const t1 = Math.floor(runMs(cyc) / DAY) * DAY;
+    const obs = gwoFromDaily(obsAamDaily(), t1 - 40 * DAY, t1);
+    const obsTrack = { label: "Observed (40 days)", color: "#222", lw: 2.2, ms: 2.5, points: obs, endLabel: obs.length ? "OBS" : null };
+    let title = "Global Wind Oscillation [GWO] Forecast", sub = `Updated --> ${cyc}`;
+    const ampOf = pts => pts.map(p => ({ t: p.t, v: Math.hypot(p.x, p.y) }));
+    if (state.view === "all") {
+      for (const m of MODEL_KEYS) {
+        const r = runAtOrBefore(m, cyc, C.sameCycleHours), md = C.models[m];
+        const j = r && await loadRun(m, r);
+        const pts = j && gwoRun(j);
+        legend.push({ label: md.label, color: md.color, symbol: md.symbol, filled: md.filled, dim: !pts });
+        if (j && !j.indices.aam) missing.push(md.short);
+        if (!pts) continue;
+        used.push(`${md.short} ${runLabel(r)}`);
+        tracks.push({ label: md.label, color: md.color, symbol: md.symbol, filled: md.filled, points: pts, ms: 3.5, lw: 2, dayMarks: true });
+        ampSeries.push({ label: md.label, color: md.color, symbol: md.symbol, filled: md.filled, points: ampOf(pts), ms: 4 });
+      }
+    } else {
+      const m = state.model, md = C.models[m];
+      const runs = state.view === "trend" ? runsOf(m).filter(r => r <= cyc).slice(0, state.n) : [runAtOrBefore(m, cyc) || runsOf(m)[0]].filter(Boolean);
+      const js = await Promise.all(runs.map(r => loadRun(m, r)));
+      if (js[0] && !js[0].indices.aam) missing.push(md.short);
+      if (state.view === "model" && js[0] && js[0].indices.aam) {
+        const d = js[0].indices.aam;
+        if (d.members) d.members.forEach((_, i) => tracks.push({ label: `member ${i}`, color: md.color, opacity: 0.22, lw: 1, ms: 0, points: gwoRun(js[0], i), tipLabel: `${md.short} member ${i}` }));
+        const pts = gwoRun(js[0]);
+        tracks.push({ label: md.label, color: md.color, symbol: md.symbol, filled: md.filled, points: pts, ms: 4, lw: 3, dayMarks: true });
+        ampSeries.push({ label: md.label, color: md.color, symbol: md.symbol, filled: md.filled, points: ampOf(pts), ms: 5 });
+        legend.push({ label: md.label, color: md.color, symbol: md.symbol, filled: md.filled });
+        if (d.members) legend.push({ swatch: "line", label: `${d.members.length} members`, color: md.color, opacity: 0.35, textColor: "#555" });
+        used.push(`${md.short} ${runLabel(runs[0])}`);
+        title = `${md.short} GWO Forecast`; sub = `Init: ${initLabel(runs[0])}`;
+      } else if (state.view === "trend") {
+        const k = runs.length;
+        for (let i = k - 1; i >= 0; i--) {
+          const pts = js[i] && gwoRun(js[i]);
+          if (!pts) continue;
+          const col = i === 0 ? md.color : shade(md.color, k === 1 ? 1 : (k - 1 - i) / (k - 1) * 0.85);
+          tracks.push({ label: runLabel(runs[i]), color: col, symbol: md.symbol, filled: i === 0, points: pts, ms: i === 0 ? 4 : 3, lw: i === 0 ? 3 : 1.5, dayMarks: i === 0 });
+          ampSeries.push({ label: runLabel(runs[i]), color: col, symbol: md.symbol, filled: i === 0, points: ampOf(pts), ms: i === 0 ? 5 : 3, lw: i === 0 ? 2.4 : 1.3 });
+          legend.unshift({ label: runLabel(runs[i]), color: col, symbol: md.symbol, filled: i === 0, textColor: i === 0 ? md.color : "#555" });
+        }
+        used.push(...runs.map(runLabel));
+        title = `${md.short} GWO — last ${k} runs`; sub = `Latest: ${initLabel(runs[0] || cyc)}`;
+      }
+    }
+    tracks.unshift(obsTrack);
+    let lim = 4;
+    for (const tr of tracks) for (const p of tr.points || []) lim = Math.max(lim, Math.ceil(Math.max(Math.abs(p.x), Math.abs(p.y)) + 0.3));
+    TC.phaseDiagram(phaseBox, { kind: "gwo", title, sub, site: C.siteLabel, tracks, legend, legendX: 395, legendColW: 185, legendPerRow: 2, lim: Math.min(lim, 7) });
+    ampSeries.unshift(Object.assign({}, OBS, { points: obs.map(p => ({ t: p.t, v: Math.hypot(p.x, p.y) })), ms: 4 }));
+    TC.lineChart(ampBox, {
+      title: "GWO Amplitude", sub: "√(AAM² + tendency²), σ", x0: t1 - 20 * DAY, x1: t1 + 16 * DAY, yMin: 0, yMax: 4, yFixed: true,
+      series: ampSeries, legend: [], initTime: t1, width: 760, height: 520, labelEvery: 4, labelPhase: 0
+    });
+    return { used, missing };
+  }
+
+  window.__teleTest = { gwoFromDaily: (m, a, b) => gwoFromDaily(m, a, b), GWO_TEND, DAY };   // for automated checks
+
+  function appContext() {
+    return { C, getJSON, loadRun, runMs, runLabel, initLabel, manifest: () => manifest, analysis: () => analysis, state };
+  }
+
   /* ---------- render ------------------------------------------------------- */
   function note(container, msg) { container.innerHTML = `<div class="empty">${msg}</div>`; return []; }
 
@@ -328,6 +444,10 @@
     if (cycles.length && (state.follow || !state.cycle || !cycles.includes(state.cycle))) state.cycle = cycles[0];
     buildTabs(); buildControls(); writeHash();
     const main = $("#main");
+    if (state.tab === "bsr" || state.tab === "typhoon") {
+      $("#updated").textContent = manifest.updated ? `Data updated ${manifest.updated.replace("T", " ")}` : "";
+      return window.TeleRules[state.tab](main, appContext());
+    }
     if (!cycles.length && state.tab !== "outlooks") {
       main.innerHTML = `<div class="empty">No model runs yet. Run <code>pipeline/run_ingest.py</code> to populate <code>${C.dataPath}</code>.</div>`;
       return;
@@ -343,6 +463,15 @@
       const tmp = document.createElement("div");
       await mjoView($("#ov-mjo"), tmp);
       state.view = v;
+      return;
+    }
+    if (tab === "gwo") {
+      main.innerHTML = `<div class="mjo"><div class="card"><div class="chart" id="phase"></div></div><div class="card"><div class="chart" id="amp"></div><div class="notes" id="gwoNotes"></div></div></div><div class="runs" id="runsUsed"></div>`;
+      const { used, missing } = await gwoView($("#phase"), $("#amp"));
+      $("#runsUsed").textContent = used.length ? "Runs shown: " + used.join(" · ") : "";
+      $("#gwoNotes").innerHTML = `<p>Global Wind Oscillation (Weickmann &amp; Berry): x = global relative AAM anomaly, y = its tendency, both standardized, after a 5-day running mean; tendency from a 5-point (4th-order) difference. Orbits run clockwise: phases 2–3 low AAM (La Niña-like), 4–5 AAM rising, 6–7 high AAM (El Niño-like), 8–1 AAM falling.</p>` +
+        `<p>Forecast tracks continue the observed AAM series with each run's daily-mean AAM, so the first few days blend analysis and forecast. Large markers every 5 days.</p>` +
+        (missing.length ? `<p><b>No AAM in:</b> ${missing.join(", ")} (AAM is switched off for that model in <code>pipeline/config.json</code> to save bandwidth).</p>` : "");
       return;
     }
     if (tab === "mjo") {

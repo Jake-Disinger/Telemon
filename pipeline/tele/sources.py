@@ -32,14 +32,14 @@ class Source:
         return gribio.url_exists(self.probe_url(run))
 
     def empty(self):
-        return {"z500": None, "z1000": None, "u": {}, "olr": None, "ttr": None}
+        return {"z500": None, "z1000": None, "u": {}, "olr": None, "ttr": None, "mslp": None}
 
 
 # ---- NCEP (GFS / GEFS) -------------------------------------------------------
 class NCEPSource(Source):
     def wanted(self):
         keys = {"HGT:500 mb": ("z500", None), "HGT:1000 mb": ("z1000", None),
-                "ULWRF:top of atmosphere": ("olr", None)}
+                "ULWRF:top of atmosphere": ("olr", None), "PRMSL:mean sea level": ("mslp", None)}
         for l in self.u_levels:
             keys[f"UGRD:{l} mb"] = ("u", l)
         return keys
@@ -85,7 +85,7 @@ class NCEPSource(Source):
 # ---- ECMWF open data (HRES, ENS, AIFS) ---------------------------------------
 class ECMWFSource(Source):
     def wanted(self):
-        keys = {"gh:500": ("z500", None), "gh:1000": ("z1000", None), "ttr": ("ttr", None)}
+        keys = {"gh:500": ("z500", None), "gh:1000": ("z1000", None), "ttr": ("ttr", None), "msl": ("mslp", None)}
         for l in self.u_levels:
             keys[f"u:{l}"] = ("u", l)
         return keys
@@ -122,7 +122,8 @@ class ECMWFSource(Source):
 # ---- MSC Datamart (GEPS) -----------------------------------------------------
 class MSCSource(Source):
     def files(self):
-        f = {("z500", None): ("HGT", "ISBL_0500"), ("z1000", None): ("HGT", "ISBL_1000")}
+        f = {("z500", None): ("HGT", "ISBL_0500"), ("z1000", None): ("HGT", "ISBL_1000"),
+             ("mslp", None): ("PRMSL", "MSL_0")}
         for l in self.u_levels:
             f[("u", l)] = ("UGRD", f"ISBL_{l:04d}")
         return f

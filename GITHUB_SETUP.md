@@ -43,7 +43,7 @@ All of the setup below happens in a web browser.
 2. Click **Setup (run once)** on the left, then **Run workflow → Run workflow**.
 3. It takes about 1–1.5 hours. It does three things:
    - Builds the 1991–2020 climatology from the NOAA PSL reanalysis.
-   - Seeds 150 days of observed index history.
+   - Measures the GFS-vs-reanalysis AAM offset and seeds 150 days of observed history from GFS analyses.
    - Publishes the page.
 
    Click the run to watch the log. A green check means it worked.
@@ -68,3 +68,8 @@ The **Ingest model runs** job starts on its own every 30 minutes. To get data ri
 - The computed data lives on the `data-store` branch. It is kept as a single snapshot, so the repository doesn't grow; runs older than 60 days are pruned.
 - The climatology is attached to the release named `climatology`.
 - Nothing is stored on your computer.
+
+## After adding the GWO / Bering Sea Rule / Typhoon Rule update
+
+- The regular ingest starts saving North Pacific maps and typhoon tracks on its next pass.
+- To fill in the last 45 days of observed Bering Sea maps right away, run **Setup (run once)** again with the rebuild box **unchecked**. It takes a few minutes.

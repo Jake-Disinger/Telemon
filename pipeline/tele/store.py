@@ -40,11 +40,14 @@ def _read_json(path, default):
 
 
 class Store:
-    def __init__(self, data_dir, state_dir, retention_days=60, analysis_days=180):
+    def __init__(self, data_dir, state_dir, retention_days=60, analysis_days=180,
+                 map_days=10, analysis_map_days=45):
         self.data_dir = data_dir
         self.state_dir = state_dir
         self.retention_days = retention_days
         self.analysis_days = analysis_days
+        self.map_days = map_days
+        self.analysis_map_days = analysis_map_days
 
     # ---- manifest / runs --------------------------------------------------------
     @property
@@ -73,6 +76,27 @@ class Store:
             except FileNotFoundError:
                 pass
         man["updated"] = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%dT%H:%MZ")
+        _write_json(self.manifest_path, man)
+
+    # ---- North Pacific maps (Bering Sea Rule) -------------------------------------
+    def write_map(self, model, when, payload):
+        """model is a model key or "analysis"; files live in data/maps/<model>/<YYYYMMDDHH>.json"""
+        rid = when.strftime(TFMT)
+        _write_json(os.path.join(self.data_dir, "maps", model, rid + ".json"), payload)
+        man = self.manifest()
+        lst = man.setdefault("maps", {}).setdefault(model, [])
+        if rid not in lst:
+            lst.append(rid)
+        lst.sort(reverse=True)
+        keep = self.analysis_map_days if model == "analysis" else self.map_days
+        newest = dt.datetime.strptime(lst[0], TFMT)
+        cutoff = (newest - dt.timedelta(days=keep)).strftime(TFMT)
+        for old in [r for r in lst if r < cutoff]:
+            lst.remove(old)
+            try:
+                os.remove(os.path.join(self.data_dir, "maps", model, old + ".json"))
+            except FileNotFoundError:
+                pass
         _write_json(self.manifest_path, man)
 
     # ---- analysis (observed) ------------------------------------------------------

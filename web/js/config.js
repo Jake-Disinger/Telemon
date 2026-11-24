@@ -26,6 +26,33 @@ window.TELE_CONFIG = {
     mjo: { name: "Madden-Julian Oscillation",  abbr: "MJO" }
   },
 
+  // ---- Bering Sea Rule tab ----------------------------------------------------------
+  bsr: {
+    lagDays: 18,                       // default lag (adjustable on the page, 10-25 days)
+    // where the US outline is placed: its center (39N, 96W) goes to lat/lon (deg E), at
+    // `scale` x true size, rotated `rot` degrees. Fitted to the classic OPC overlay charts.
+    overlay: { lat: 48.0, lon: 181.0, scale: 1.15, rot: 0 },
+    mapBounds: { latN: 70, latS: 18, lonW: 125, lonE: 240 },
+    // OPC Pacific charts. If an image doesn't load, fix its URL here. `cal` is the chart's
+    // pixel calibration: click "Calibrate" on the page, then paste the result here so
+    // everyone gets the overlay without calibrating.
+    opc: [
+      { key: "sfc00", title: "Surface analysis",      url: "https://ocean.weather.gov/shtml/P_full_00hrsfc.gif", lead: 0,  cal: null },
+      { key: "sfc24", title: "24-hour surface forecast", url: "https://ocean.weather.gov/shtml/P_24hrsfc.gif", lead: 24, cal: null },
+      { key: "sfc48", title: "48-hour surface forecast", url: "https://ocean.weather.gov/shtml/P_48hrsfc.gif", lead: 48, cal: null },
+      { key: "sfc72", title: "72-hour surface forecast", url: "https://ocean.weather.gov/shtml/P_72hrsfc.gif", lead: 72, cal: null },
+      { key: "sfc96", title: "96-hour surface forecast", url: "https://ocean.weather.gov/shtml/P_96hrsfc.gif", lead: 96, cal: null }
+    ]
+  },
+
+  // ---- Typhoon Rule tab ------------------------------------------------------------
+  typhoon: {
+    lagDays: [6, 10],                  // eastern-US trough window after recurvature near Japan
+    mapBounds: { latN: 55, latS: 0, lonW: 100, lonE: 190 },
+    japanBox: { lat: [24, 46], lon: [122, 150] },
+    daysShown: 45
+  },
+
   // "Outlooks" tab: any image URLs (CPC products shown by default). Edit/add as needed.
   outlooks: [
     { group: "CPC 6-10 Day", items: [

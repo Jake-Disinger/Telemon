@@ -34,6 +34,23 @@ telemon/
 - **Save PNG:** exports the chart at 2× resolution for briefings.
 - **Shareable URLs:** the URL hash keeps the current state, e.g. `#tab=pna&view=model&model=eps&run=2026112300`.
 
+## Rule-based and AAM tools
+
+- **GWO tab:** the Weickmann–Berry Global Wind Oscillation.
+  - x is the global relative AAM anomaly and y its tendency, both standardized, after a 5-day running mean. The tendency uses a 5-point, 4th-order difference. Orbits run clockwise.
+  - Forecast tracks continue the observed AAM series with each run's daily-mean AAM.
+  - EPS has no AAM unless `"aam": true` is set for it in `pipeline/config.json`.
+- **Bering Sea Rule tab:**
+  - **Model maps:** daily North Pacific maps (sea-level pressure with H/L centers, or 500 mb heights and anomalies) from the GFS analysis (45 days) and every model run (10 days). The US outline sits where the rule maps it, and each map is labeled with the projected date (valid time + lag; the lag is selectable, default 18 days).
+  - **OPC charts:** OPC's Pacific surface charts with the same overlay. Each chart needs a one-time two-click calibration; paste the result into `bsr.opc[].cal` in `web/js/config.js` to share it.
+  - **Adjust overlay:** moves or resizes the US outline; paste the settings into `bsr.overlay` in `web/js/config.js` to share them.
+- **Typhoon Rule tab:** West Pacific tracks from NOAA IBTrACS, refreshed every 6 hours.
+  - Recurvature is the westernmost point of a track that then moves at least 4° east and 3° north.
+  - Storms that recurve near Japan (the shaded box) get an implied eastern-US trough window 6–10 days later. Typhoon-strength storms (≥64 kt) are highlighted.
+  - IBTrACS updates about three times a week, so the newest positions can lag real time.
+
+Both rules are forecaster heuristics and are labeled that way on the page.
+
 ## Setup
 
 **No Python on your computer? Use GitHub (recommended):** see `GITHUB_SETUP.md`. GitHub Actions runs the pipeline on a schedule and GitHub Pages hosts the page, all set up from a browser.

@@ -22,6 +22,8 @@ from tele.climo import Climatology          # noqa: E402
 from tele.sources import make_source, latest_cycles   # noqa: E402
 from tele.store import Store               # noqa: E402
 from tele import pipeline                  # noqa: E402
+from tele import typhoons                  # noqa: E402
+from tele.maps import MapAccumulator       # noqa: E402
 
 log = logging.getLogger("tele")
 
@@ -44,14 +46,20 @@ def process(cfg, clim, store, key, run):
     u_levels = set([850, 200]) | (set(clim.aam_levels) if mcfg.get("aam", True) else set())
     src = make_source(key, mcfg, u_levels)
     log.info("=== %s %s (%d steps)", key, run.strftime("%Y%m%d%H"), len(src.steps))
-    steps, members = pipeline.collect(src, run, clim)
+    maps = MapAccumulator() if cfg.get("maps", {}).get("enabled", True) else None
+    steps, members = pipeline.collect(src, run, clim, maps=maps,
+                                      map_max_hours=cfg.get("maps", {}).get("max_hours", 360))
     if not members:
         log.error("%s %s: nothing downloaded", key, run)
         return False
     if key == cfg["analysis_model"]:
         pipeline.analysis_update(clim, store, run, members, steps)
+        if maps is not None and run.hour == 0 and 0 in maps.sums:
+            store.write_map("analysis", run, maps.payload("analysis", run.strftime("%Y%m%d%H"), [0]))
     payload = pipeline.build_payload(src, run, clim, steps, members, store.mjo_daily())
     store.write_run(key, run, payload)
+    if maps is not None and maps.sums:
+        store.write_map(key, run, maps.payload(key, run.strftime("%Y%m%d%H")))
     log.info("wrote %s %s", key, run.strftime("%Y%m%d%H"))
     return True
 
@@ -78,7 +86,9 @@ def main():
         return
 
     clim = Climatology(cfg["climatology"], os.path.join(cfg["state_dir"], "calibration.json"))
-    store = Store(cfg["data_dir"], cfg["state_dir"], cfg.get("retention_days", 60))
+    mc = cfg.get("maps", {})
+    store = Store(cfg["data_dir"], cfg["state_dir"], cfg.get("retention_days", 60),
+                  map_days=mc.get("retention_days", 10), analysis_map_days=mc.get("analysis_days", 45))
     keys = [k for k, m in cfg["models"].items() if m.get("enabled", True)] if a.model == "all" else [a.model]
     # analysis model first so the 'observed' history is current for the others
     keys.sort(key=lambda k: k != cfg["analysis_model"])
@@ -99,6 +109,13 @@ def main():
                 process(cfg, clim, store, key, run)
             except Exception:
                 log.exception("%s %s failed", key, run)
+
+    tcfg = cfg.get("typhoons", {})
+    if tcfg.get("enabled", True):
+        try:
+            typhoons.update(cfg["data_dir"], tcfg)
+        except Exception:
+            log.exception("typhoon update failed")
 
 
 if __name__ == "__main__":

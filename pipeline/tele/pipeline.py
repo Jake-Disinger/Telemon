@@ -5,18 +5,19 @@ import logging
 import numpy as np
 
 from . import indices as ix
-from .climo import INDEX_NAMES
+from .climo import INDEX_NAMES, cal_index
 
 log = logging.getLogger("tele")
 MJO_WINDOW = 120          # days, prior-mean removal (Wheeler & Hendon 2004)
 MJO_MIN_DAYS = 60
 
 
-def collect(source, run, clim, steps_data=None):
+def collect(source, run, clim, steps_data=None, maps=None, map_max_hours=360):
     """Fetch every step and reduce it to raw index values + equatorial profiles.
 
     Returns (steps, members) where members[m] = dict(raw={name: [..]}, eq={var: [..]}).
-    steps_data lets tests inject fields instead of downloading.
+    steps_data lets tests inject fields instead of downloading. maps: an optional
+    tele.maps.MapAccumulator that receives North Pacific fields once per forecast day.
     """
     members = {}
     steps_ok = []
@@ -40,6 +41,10 @@ def collect(source, run, clim, steps_data=None):
             for lev in (850, 200):
                 if lev in d.get("u", {}):
                     rec["eq"][f"u{lev}"][step] = ix.eq_profile(d["u"][lev])
+            if maps is not None and step % 24 == 0 and step <= map_max_hours:
+                z = d.get("z500")
+                maps.add(step, z500=z, z500a=None if z is None else z - clim.z500_mean[cal_index(valid)],
+                         mslp=d.get("mslp"))
         log.info("%s %s f%03d done (%d members)", source.key, run.strftime("%Y%m%d%H"), step, len(data))
     return steps_ok, members
 

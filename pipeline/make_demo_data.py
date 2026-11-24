@@ -106,5 +106,83 @@ def main():
     print("demo data written to", os.path.abspath(OUT))
 
 
+def demo_maps(man):
+    """Synthetic North Pacific maps (moving lows/highs) for the Bering Sea Rule tab."""
+    sys.path.insert(0, HERE)
+    from tele.maps import META, ROWS, COLS
+    from tele.grid import LAT, LON
+    lat = LAT[ROWS][:, None]; lon = LON[COLS][None, :]
+
+    def fields(t_hours, seed):
+        g = np.random.default_rng(seed)
+        z = 5850 - 9.0 * (lat - 15) ** 1.15 + 60 * np.sin(np.deg2rad(lon * 3 + t_hours * 0.4))
+        p = np.full(z.shape, 1015.0)
+        za = np.zeros(z.shape)
+        for k, (la, lo, amp, speed) in enumerate([(52, 175, -38, 0.5), (40, 215, 18, 0.25), (58, 150, -22, 0.6), (33, 160, 14, 0.2)]):
+            lo_t = lo + speed * t_hours / 6 + g.normal(0, 2)
+            blob = np.exp(-((lat - la) / 7) ** 2 - ((lon - lo_t) / 11) ** 2)
+            p += amp * blob
+            za += amp * 6 * blob
+        return np.round(z + za * 0.6), np.round(za), np.round(p * 10)
+
+    def payload(model, rid, steps, base_h):
+        out = dict(META, model=model, run=rid, steps=steps, z500=[], z500a=[], mslp=[])
+        for s in steps:
+            z, za, p = fields(base_h + s, hash((model, rid, s)) % 2**31)
+            out["z500"].append(z.astype(int).ravel().tolist()); out["z500a"].append(za.astype(int).ravel().tolist())
+            out["mslp"].append(p.astype(int).ravel().tolist())
+        return out
+
+    man["maps"] = {}
+    for mk, (kind, cycles, sh, mx, nm) in MODELS.items():
+        rids = man["models"][mk]["runs"][:3]
+        for rid in rids:
+            run = dt.datetime.strptime(rid, "%Y%m%d%H")
+            base = (run - NOW).total_seconds() / 3600
+            p = payload(mk, rid, list(range(0, min(mx, 360) + 1, 24)), base)
+            os.makedirs(os.path.join(OUT, "maps", mk), exist_ok=True)
+            json.dump(p, open(os.path.join(OUT, "maps", mk, rid + ".json"), "w"), separators=(",", ":"))
+        man["maps"][mk] = rids
+    an = []
+    for d in range(45, -1, -1):
+        t = NOW - dt.timedelta(days=d)
+        rid = t.strftime("%Y%m%d%H")
+        p = payload("analysis", rid, [0], (t - NOW).total_seconds() / 3600)
+        os.makedirs(os.path.join(OUT, "maps", "analysis"), exist_ok=True)
+        json.dump(p, open(os.path.join(OUT, "maps", "analysis", rid + ".json"), "w"), separators=(",", ":"))
+        an.append(rid)
+    man["maps"]["analysis"] = sorted(an, reverse=True)
+
+
+def demo_typhoons(now_real):
+    """Synthetic West Pacific storms (one recurving typhoon near Japan, one weaker
+    recurving storm, one active storm heading west) run through the real logic."""
+    sys.path.insert(0, HERE)
+    from tele import typhoons
+    hdr = ("SID,SEASON,NUMBER,BASIN,SUBBASIN,NAME,ISO_TIME,NATURE,LAT,LON,WMO_WIND,USA_WIND\n"
+           " ,Year, , , , , , ,degrees_north,degrees_east,kts,kts\n")
+    rows = []
+    def storm(sid, name, t0, path, wind):
+        for k, (la, lo) in enumerate(path):
+            t = t0 + dt.timedelta(hours=6 * k)
+            rows.append(f"{sid},2026,1,WP,MM,{name},{t:%Y-%m-%d %H:%M:%S},TS,{la:.1f},{lo:.1f},,{wind(k)}\n")
+    t0 = now_real - dt.timedelta(days=9)
+    p1 = [(14 + 0.5 * k, 140 - 0.9 * k) for k in range(14)] + [(21 + 1.1 * j, 127.4 + 1.5 * j) for j in range(1, 14)]
+    storm("2026318N14140", "MAN-YI", t0, p1, lambda k: min(125, 35 + 7 * k) if k < 18 else 125 - 6 * (k - 18))
+    t1 = now_real - dt.timedelta(days=20)
+    p2 = [(18 + 0.4 * k, 135 - 0.5 * k) for k in range(10)] + [(22 + 1.0 * j, 130.5 + 1.4 * j) for j in range(1, 12)]
+    storm("2026307N18135", "PABUK", t1, p2, lambda k: 50)
+    t2 = now_real - dt.timedelta(days=2)
+    storm("2026325N09150", "WUTIP", t2, [(9 + 0.15 * k, 150 - 1.2 * k) for k in range(9)], lambda k: 40 + 6 * k)
+    return typhoons.build([hdr + "".join(rows)], now_real)
+
+
 if __name__ == "__main__":
     main()
+    man = json.load(open(os.path.join(OUT, "manifest.json")))
+    demo_maps(man)
+    json.dump(man, open(os.path.join(OUT, "manifest.json"), "w"), indent=1)
+    nowr = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None, minute=0, second=0, microsecond=0)
+    ty = demo_typhoons(nowr.replace(hour=nowr.hour - nowr.hour % 6))
+    json.dump(ty, open(os.path.join(OUT, "typhoons.json"), "w"), separators=(",", ":"))
+    print("demo maps and typhoons written")

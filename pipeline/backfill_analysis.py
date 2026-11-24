@@ -25,6 +25,8 @@ from tele import indices as ix                        # noqa: E402
 from tele.climo import Climatology, INDEX_NAMES       # noqa: E402
 from tele.sources import NCEPSource                   # noqa: E402
 from tele.store import Store                          # noqa: E402
+from tele.maps import MapAccumulator                  # noqa: E402
+from tele.climo import cal_index                      # noqa: E402
 
 log = logging.getLogger("tele")
 
@@ -70,6 +72,10 @@ def backfill(cfg, clim, store, days, fetch=None, now=None, hours=(0, 12), worker
             if res is None:
                 continue
             f, olr = res
+            if run.hour == 0 and run >= now - dt.timedelta(days=store.analysis_map_days) and f.get("z500") is not None:
+                m = MapAccumulator()
+                m.add(0, z500=f["z500"], z500a=f["z500"] - clim.z500_mean[cal_index(run)], mslp=f.get("mslp"))
+                store.write_map("analysis", run, m.payload("analysis", run.strftime("%Y%m%d%H"), [0]))
             raw = clim.raw_indices(run, f.get("z500"), f.get("z1000"), f.get("u"))
             store.update_analysis(run, {n: clim.standardize(n, raw[n]) for n in INDEX_NAMES})
             u = f.get("u", {})

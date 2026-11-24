@@ -265,13 +265,34 @@
     return svg;
   }
 
-  /* -------- MJO RMM phase diagram ----------------------------------------- */
+  /* -------- phase-space layouts (MJO RMM and GWO) ------------------------- */
+  const LAYOUTS = {
+    mjo: {
+      xLabel: "RMM1", yLabel: "RMM2",
+      center: p => -180 + (p - 0.5) * 45,                          // degrees
+      phaseOf: (x, y) => (Math.floor((Math.atan2(y, x) * 180 / Math.PI + 180) / 45) % 8) + 1,
+      regions: { top: "Western Pacific", bottom: "Indian Ocean", right: "Maritime Continent", left: "Western Hem. and Africa" },
+      ampLabel: "Amplitude"
+    },
+    // Weickmann & Berry GWO: x = AAM anomaly, y = AAM tendency, clockwise orbit;
+    // phases 2-3 low AAM (La Nina-like), 4-5 rising, 6-7 high AAM (El Nino-like), 8-1 falling.
+    gwo: {
+      xLabel: "Relative AAM anomaly (σ)", yLabel: "AAM tendency (σ)",
+      center: p => 292.5 - 45 * p,
+      phaseOf: (x, y) => { const th = Math.atan2(y, x) * 180 / Math.PI; return Math.floor((((270 - th) % 360) + 360) % 360 / 45) + 1; },
+      regions: { top: "AAM rising", bottom: "AAM falling", right: "High AAM (El Niño-like)", left: "Low AAM (La Niña-like)" },
+      ampLabel: "Amplitude"
+    }
+  };
+
+  /* -------- MJO RMM / GWO phase diagram ----------------------------------- */
   function phaseDiagram(container, spec) {
     const W = spec.width || 760;
     const L = 70, R = W - 30, T = 150, B = T + (R - L), H = B + 58;
     const { svg, tip } = makeSvg(container, W, H, spec.title);
     header(svg, { title: spec.title, sub: spec.sub, site: spec.site }, W);
     const lim = spec.lim || 4;
+    const LY = LAYOUTS[spec.kind || "mjo"];
     const sx = v => L + (v + lim) / (2 * lim) * (R - L);
     const sy = v => T + (lim - v) / (2 * lim) * (B - T);
     const cx = sx(0), cy = sy(0);
@@ -280,8 +301,8 @@
       text(g, sx(v), B + 22, String(v), { "text-anchor": "middle", "font-size": 15 });
       text(g, L - 8, sy(v) + 5, String(v), { "text-anchor": "end", "font-size": 15 });
     }
-    text(g, (L + R) / 2, B + 44, "RMM1", { "text-anchor": "middle", "font-size": 16 });
-    text(g, 18, (T + B) / 2, "RMM2", { "text-anchor": "middle", "font-size": 16, transform: `rotate(-90 18 ${(T + B) / 2})` });
+    text(g, (L + R) / 2, B + 44, LY.xLabel, { "text-anchor": "middle", "font-size": 16 });
+    text(g, 18, (T + B) / 2, LY.yLabel, { "text-anchor": "middle", "font-size": 16, transform: `rotate(-90 18 ${(T + B) / 2})` });
     const dot = { stroke: "#8a8a8a", "stroke-dasharray": "3,4", "stroke-width": 1 };
     el("line", Object.assign({ x1: L, x2: R, y1: cy, y2: cy }, dot), g);
     el("line", Object.assign({ x1: cx, x2: cx, y1: T, y2: B }, dot), g);
@@ -292,14 +313,14 @@
     el("circle", { cx, cy, r: sx(1) - cx, fill: "#ececec", stroke: "#555", "stroke-width": 1.2 }, g);
     // phase numbers at the octants, region names on the sides
     for (let p = 1; p <= 8; p++) {
-      const ang = (-180 + (p - 0.5) * 45) * Math.PI / 180, rr = lim * 0.86;
+      const ang = LY.center(p) * Math.PI / 180, rr = lim * 0.86;
       text(g, sx(rr * Math.cos(ang)), sy(rr * Math.sin(ang)) + 8, String(p), { "text-anchor": "middle", "font-size": 24, "font-weight": 700, fill: "#9b9b9b" });
     }
     const reg = { "font-size": 17, fill: "#444", "text-anchor": "middle", "font-style": "italic" };
-    text(g, (L + R) / 2, T + 24, "Western Pacific", reg);
-    text(g, (L + R) / 2, B - 10, "Indian Ocean", reg);
-    text(g, R - 12, (T + B) / 2, "Maritime Continent", Object.assign({ transform: `rotate(90 ${R - 12} ${(T + B) / 2})` }, reg));
-    text(g, L + 18, (T + B) / 2, "Western Hem. and Africa", Object.assign({ transform: `rotate(-90 ${L + 18} ${(T + B) / 2})` }, reg));
+    text(g, (L + R) / 2, T + 24, LY.regions.top, reg);
+    text(g, (L + R) / 2, B - 10, LY.regions.bottom, reg);
+    text(g, R - 12, (T + B) / 2, LY.regions.right, Object.assign({ transform: `rotate(90 ${R - 12} ${(T + B) / 2})` }, reg));
+    text(g, L + 18, (T + B) / 2, LY.regions.left, Object.assign({ transform: `rotate(-90 ${L + 18} ${(T + B) / 2})` }, reg));
     el("rect", { x: L, y: T, width: R - L, height: B - T, fill: "none", stroke: "#000", "stroke-width": 2 }, svg);
 
     const cid = "clip" + Math.random().toString(36).slice(2);
@@ -335,11 +356,11 @@
       ring.setAttribute("cx", sx(best.p.x)); ring.setAttribute("cy", sy(best.p.y)); ring.setAttribute("visibility", "visible");
       const d = new Date(best.p.t);
       const amp = Math.hypot(best.p.x, best.p.y);
-      const ph = (Math.floor((Math.atan2(best.p.y, best.p.x) * 180 / Math.PI + 180) / 45) % 8) + 1;
+      const ph = LY.phaseOf(best.p.x, best.p.y);
       placeTip(container, tip, evt, `<b>${best.tr.tipLabel || best.tr.label}</b><div>${pad2(d.getUTCHours())}Z ${pad2(d.getUTCDate())} ${MON[d.getUTCMonth()]}${best.p.lead !== undefined ? ` (day ${best.p.lead})` : ""}</div>` +
         `<div class=tc-row><span class=tc-lab>Phase</span><span class=tc-val>${amp < 1 ? ph + " (weak)" : ph}</span></div>` +
         `<div class=tc-row><span class=tc-lab>Amplitude</span><span class=tc-val>${amp.toFixed(2)}</span></div>` +
-        `<div class=tc-row><span class=tc-lab>RMM1 / RMM2</span><span class=tc-val>${best.p.x.toFixed(2)} / ${best.p.y.toFixed(2)}</span></div>`);
+        `<div class=tc-row><span class=tc-lab>${LY.xLabel.split(" (")[0].replace("Relative AAM anomaly","AAM")} / ${LY.yLabel.split(" (")[0].replace("AAM tendency","tendency")}</span><span class=tc-val>${best.p.x.toFixed(2)} / ${best.p.y.toFixed(2)}</span></div>`);
     });
     hit.addEventListener("mouseleave", () => { tip.style.display = "none"; ring.setAttribute("visibility", "hidden"); });
     return svg;
@@ -362,5 +383,5 @@
     img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml);
   }
 
-  window.TeleCharts = { lineChart, boxChart, phaseDiagram, exportPNG, dLabel, MON, DAY };
+  window.TeleCharts = { lineChart, boxChart, phaseDiagram, exportPNG, dLabel, MON, DAY, LAYOUTS, el, text, marker, makeSvg, svgPoint, placeTip, legend };
 })();
