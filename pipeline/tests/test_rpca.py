@@ -55,3 +55,17 @@ def test_month_blending_is_continuous():
     w_start = dict(c.month_weights(dt.datetime(2026, 2, 1)))
     assert abs(w_end[0] - w_start[0]) < 0.06 and abs(w_end[1] - w_start[1]) < 0.06
     assert dict(c.month_weights(dt.datetime(2026, 1, 16)))[0] > 0.95
+
+
+def test_cpc_regression_reproduces_a_linear_index():
+    """If the target index is a linear projection of the daily anomalies (as CPC's is),
+    the calibration must recover it almost exactly on held-out years."""
+    rng = np.random.default_rng(5)
+    days = [dt.date(1991, 1, 1) + dt.timedelta(days=k) for k in range(0, 365 * 8)]
+    p = ix.domain_mask(ix.RPCA_DOMAIN).sum()
+    basis = rng.normal(size=(12, p))
+    A = rng.normal(size=(len(days), 12)) @ basis + rng.normal(0, 0.3, (len(days), p))
+    true_w = basis[0] * 0.02 - basis[3] * 0.01
+    y = A @ true_w + 0.1
+    w, b, r_in, r_cv = bc.fit_index(A, y, np.array([d.year for d in days]), n_modes=20)
+    assert r_in > 0.99 and r_cv > 0.99, (r_in, r_cv)

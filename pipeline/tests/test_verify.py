@@ -16,3 +16,16 @@ def test_compare_with_cpc():
             times.append(f"{d:%Y%m%d}{h:02d}"); vals.append(x + 0.5 + rng.normal(0, 0.05))
     r = v.compare(v.ours_daily({"times": times, "nao": vals}, "nao"), v.parse_cpc(cpc_txt, today - dt.timedelta(days=200)))
     assert r["n"] == 60 and r["corr"] > 0.98 and abs(r["mean_diff"] - 0.5) < 0.05
+
+
+def test_apply_offsets_is_incremental(tmp_path):
+    cfg = {"state_dir": str(tmp_path / "state"), "data_dir": str(tmp_path)}
+    os.makedirs(cfg["state_dir"])
+    json.dump({"aam_offset": 1.0, "index_offsets": {"nao": 0.5}}, open(os.path.join(cfg["state_dir"], "calibration.json"), "w"))
+    analysis = {"times": ["2026112300"], "nao": [1.0], "pna": [0.2]}
+    report = {"indices": {"nao": {"n": 150, "mean_diff": 0.25}, "pna": {"n": 30, "mean_diff": 1.0}}}
+    v.apply_offsets(cfg, analysis, report)
+    cal = json.load(open(os.path.join(cfg["state_dir"], "calibration.json")))
+    assert cal["index_offsets"] == {"nao": 0.75} and cal["aam_offset"] == 1.0     # pna skipped: too few days
+    a = json.load(open(os.path.join(str(tmp_path), "analysis.json")))
+    assert a["nao"] == [0.75] and a["pna"] == [0.2]
