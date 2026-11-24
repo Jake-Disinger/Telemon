@@ -136,7 +136,8 @@
     const a = DIV[i], b = DIV[i + 1];
     return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
   }
-  function fillImage(g, pr, sample, lim) {
+  function fillImage(g, pr, sample, lim, colorFn) {
+    const col = colorFn || divColor;
     const cw = Math.round(pr.W / 2), ch = Math.round(pr.H / 2);
     const cv = document.createElement("canvas"); cv.width = cw; cv.height = ch;
     const ctx = cv.getContext("2d"), img = ctx.createImageData(cw, ch);
@@ -145,7 +146,7 @@
       for (let i = 0; i < cw; i++) {
         const v = sample(lat, pr.lon(pr.L + (i + 0.5) / cw * pr.W)), k = (j * cw + i) * 4;
         if (v == null) { img.data[k + 3] = 0; continue; }
-        const c = divColor(v, lim);
+        const c = col(v, lim);
         img.data[k] = c[0]; img.data[k + 1] = c[1]; img.data[k + 2] = c[2]; img.data[k + 3] = 255;
       }
     }
@@ -376,5 +377,5 @@
     return g;
   }
 
-  window.TeleMaps = { projection, bsrTransform, pasteOverlay, lccUS, bsrMap, trackMap, timeline, solveCal, calProject, chartOverlay, CAT };
+  window.TeleMaps = { projection, gridSampler, fillImage, divColor, drawLines, contours, bsrTransform, pasteOverlay, lccUS, bsrMap, trackMap, timeline, solveCal, calProject, chartOverlay, CAT };
 })();

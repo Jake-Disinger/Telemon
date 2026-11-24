@@ -50,7 +50,9 @@
         <div class="tc-muted" id="ovMsg">Changes are remembered in this browser. To make them the default for everyone, use "Copy settings" and paste into <code>bsr.overlay</code> in <code>js/config.js</code>.</div>
       </div>
       <div id="bsrBody"></div>
-      <div class="notes">Bering Sea Rule (J. Renken): the pattern over the Bering Sea / Aleutians tends to repeat over the central and eastern US about 17–21 days later — a trough there suggests a trough here. The US outline is drawn where the rule maps it; the date in the corner is the valid time plus the lag. This is a forecaster heuristic, not a verified index.</div>`;
+      <div class="notes">Bering Sea Rule (J. Renken): the pattern over the Bering Sea / Aleutians tends to repeat over the central and eastern US about 17–21 days later — a trough there suggests a trough here. The US outline is drawn where the rule maps it; the date in the corner is the valid time plus the lag. How often the rule has actually worked is shown in the US composites below.</div>
+      <div class="card"><div class="chart" id="bsrIdx"></div><div class="notes" id="bsrIdxNote"></div></div>
+      <div id="impacts"></div>`;
 
     TC_seg("#bsrSrc", [["opc", "OPC charts"], ["models", "Model maps"]], st.source, v => { st.source = v; save(); draw(); });
     TC_seg("#bsrField", [["mslp", "Sea-level pressure"], ["z500a", "500 mb height anomaly"]], st.field, v => { st.field = v; save(); draw(); });
@@ -220,6 +222,80 @@
     }
 
     draw();
+    beringSection(main, ctx, maps, getMap, us);
+  }
+
+  /* Bering Sea index (500 mb anomaly over the composite box, in sigma) from the stored
+     North Pacific maps, plus the US composites panel. */
+  async function beringSection(main, ctx, maps, getMap, us) {
+    const TI = window.TeleImpacts, C = ctx.C;
+    const box = main.querySelector("#bsrIdx"), note = main.querySelector("#bsrIdxNote");
+    const ix = await TI.getIndex(ctx);
+    const P = ix && ix.products && ix.products.bsr;
+    const lag = [17, 21];
+    const series = [], signals = [];
+    let defaultCat = null, defaultMonth = null;
+    if (P) {
+      const sigma = (m, valid) => { const a = TI.beringIndex(m.j, m.si, P.box); return a == null ? null : a / P.sd[TI.doyIndex(valid)]; };
+      // observed: last 30 daily analyses
+      const an = (maps.analysis || []).slice(0, 30);
+      const ajs = await Promise.all(an.map(r => getMap("analysis", r)));
+      const obs = an.map((r, i) => ajs[i] && { t: ridMs(r), v: sigma({ j: ajs[i], si: 0 }, ridMs(r)) }).filter(p => p && p.v != null).sort((a, b) => a.t - b.t);
+      const OBS = { label: "Observed", color: "#000", symbol: "circle", filled: false, points: obs, ms: 4, lw: 2 };
+      if (obs.length) series.push(OBS);
+      const rows = [];
+      if (obs.length) rows.push({ label: "Observed", color: "#000", pts: obs.slice(-21) });
+      for (const k of Object.keys(C.models)) {
+        const list = maps[k] || []; if (!list.length) continue;
+        const j = await getMap(k, list[0]); if (!j) continue;
+        const md = C.models[k];
+        const pts = j.steps.map((s, i) => ({ t: ridMs(list[0]) + s * 3600e3, v: sigma({ j, si: i }, ridMs(list[0]) + s * 3600e3) })).filter(p => p.v != null);
+        series.push({ label: md.label, color: md.color, symbol: md.symbol, filled: md.filled, points: pts, ms: 4, lw: 1.8 });
+        rows.push({ label: md.short + " " + list[0].slice(8, 10) + "Z", color: md.color, pts });
+      }
+      // signal cells: runs of |sigma| >= 1
+      for (const r of rows) {
+        const cells = [];
+        let run = null;
+        const flush = () => {
+          if (!run) return;
+          const cat = run.sign < 0 ? 0 : 1, ext = run.sign < 0 ? Math.min(...run.v) : Math.max(...run.v);
+          cells.push({ head: `${TI.fmtDay(run.t0)}${run.t1 > run.t0 ? "–" + TI.fmtDay(run.t1) : ""}: ${cat ? "ridge" : "trough"} ${ext > 0 ? "+" : "−"}${Math.abs(ext).toFixed(1)}σ`,
+            text: `→ US ${TI.fmtDay(run.t0 + lag[0] * DAY)}–${TI.fmtDay(run.t1 + lag[1] * DAY)}`, cat, t: run.t0 + lag[0] * DAY });
+          run = null;
+        };
+        for (const p of r.pts) {
+          const sgn = p.v <= -1 ? -1 : p.v >= 1 ? 1 : 0;
+          if (run && (sgn !== run.sign || p.t - run.t1 > 1.5 * DAY)) flush();
+          if (!sgn) continue;
+          if (!run) run = { sign: sgn, t0: p.t, t1: p.t, v: [] };
+          run.t1 = p.t; run.v.push(p.v);
+        }
+        flush();
+        if (!cells.length) cells.push({ head: "no day beyond ±1σ", text: "", cat: null });
+        signals.push({ label: r.label, color: r.color, cells: cells.slice(-5) });
+        if (r.label === "Observed") {
+          const last = cells.filter(c => c.cat != null).pop();
+          if (last) { defaultCat = last.cat; defaultMonth = new Date(last.t).getUTCMonth() + 1; }
+        }
+      }
+      const now = Date.now(), t0 = Math.floor(now / DAY) * DAY;
+      if (series.length) {
+        TC.lineChart(box, {
+          title: "Bering Sea Index", sub: "500 mb height anomaly, 50–65N 165E–160W (σ)",
+          x0: t0 - 30 * DAY, x1: t0 + 16 * DAY, yMin: -3, yMax: 3, yFixed: true, initTime: t0,
+          series, legend: series.map(s => ({ label: s.label, color: s.color, symbol: s.symbol, filled: s.filled })),
+          width: 1200, height: 430, labelEvery: 3, labelPhase: 0, legendX: 600, legendColW: 200, legendPerRow: 3
+        });
+        note.innerHTML = `Below −1 = Bering trough, above +1 = Bering ridge (relative to ${ix.period[0]}–${ix.period[1]} for the time of year). By the rule, the US feels it about ${lag[0]}–${lag[1]} days later. Ensemble lines are ensemble-mean maps, which smooth out extremes.`;
+      } else {
+        box.innerHTML = `<div class="empty">No North Pacific maps yet for the Bering Sea index.</div>`;
+      }
+    } else {
+      box.innerHTML = `<div class="empty">The Bering Sea index appears once the US composites have been built (Setup workflow).</div>`;
+    }
+    TI.panel(main.querySelector("#impacts"), { ctx, product: "bsr", us, signals, defaultCat, month: defaultMonth,
+      signalNote: "Dates on the right are the Bering dates plus 17–21 days." });
   }
 
   // segmented control helper (same look as the main controls)
@@ -244,7 +320,8 @@
       <div class="card"><div class="chart" id="tyMap"></div></div>
       <div class="card"><div class="chart" id="tyLine"></div></div>
       <div class="card"><table class="ty"><thead><tr><th>Storm</th><th>Active</th><th>Peak wind</th><th>Recurvature</th><th>Near Japan</th><th>Eastern-US trough window</th></tr></thead><tbody id="tyRows"></tbody></table></div>
-      <div class="notes">Typhoon Rule (J. Renken): a typhoon that recurves near Japan tends to be followed by a trough and storminess over the eastern US about ${cfg.lagDays[0]}–${cfg.lagDays[1]} days later. Recurvature here is the westernmost point of a track that then moves at least 4° east and 3° north; "near Japan" means the recurvature or later track passes through the shaded box. Red bars and stars are typhoon-strength storms (≥64 kt); gray ones are weaker storms that recurved near Japan. Tracks come from NOAA IBTrACS (updated about three times a week, with a short delay), so the newest positions can lag real time by a day or more. This is a forecaster heuristic, not a verified index.</div>`;
+      <div class="notes">Typhoon Rule (J. Renken): a typhoon that recurves near Japan tends to be followed by a trough and storminess over the eastern US about ${cfg.lagDays[0]}–${cfg.lagDays[1]} days later. Recurvature here is the westernmost point of a track that then moves at least 4° east and 3° north; "near Japan" means the recurvature or later track passes through the shaded box. Red bars and stars are typhoon-strength storms (≥64 kt); gray ones are weaker storms that recurved near Japan. Tracks come from NOAA IBTrACS (updated about three times a week, with a short delay), so the newest positions can lag real time by a day or more. How often the rule has actually worked is shown in the US composites below.</div>
+      <div id="impacts"></div>`;
     TM.trackMap(main.querySelector("#tyMap"), {
       title: `West Pacific tropical cyclones — last ${cfg.daysShown} days`,
       sub: `Source: ${data.source}, processed ${updated}. ★ = recurvature`,
@@ -269,6 +346,13 @@
       <td>${s.near_japan ? "Yes" : "—"}</td>
       <td>${s.window ? `<b>${fmtDay(ridMs(s.window[0]))} – ${fmtDay(ridMs(s.window[1]))}</b>${s.rule ? "" : ' <span class="tc-muted">(below typhoon strength)</span>'}` : "—"}</td></tr>`).join("")
       : `<tr><td colspan="6" class="tc-muted">No West Pacific storms in the last ${cfg.daysShown} days.</td></tr>`;
+    const ruleStorms = storms.filter(s => s.rule && s.window).sort((a, b) => a.window[0] < b.window[0] ? -1 : 1);
+    const signals = [{ label: "Typhoon Rule", color: "#c0234a", cells: ruleStorms.length ? ruleStorms.slice(-6).map(s => ({
+      head: `${s.name}: recurved ${window.TeleImpacts.fmtDay(ridMs(s.recurve.t))}`, text: `→ eastern US ${window.TeleImpacts.fmtDay(ridMs(s.window[0]))}–${window.TeleImpacts.fmtDay(ridMs(s.window[1]))}`, cat: 0 }))
+      : [{ head: `no typhoon recurved near Japan in the last ${cfg.daysShown} days`, text: "", cat: null }] }];
+    const last = ruleStorms[ruleStorms.length - 1];
+    window.TeleImpacts.panel(main.querySelector("#impacts"), { ctx, product: "tr", signals,
+      month: last ? new Date(ridMs(last.recurve.t)).getUTCMonth() + 1 : undefined });
   }
 
   window.TeleRules = { bsr, typhoon };

@@ -430,6 +430,36 @@
     return { used, missing };
   }
 
+  /* ---------- US impacts panel (composites) under the MJO / GWO diagrams ----------- */
+  async function impactsPanel(kind) {
+    if (!window.TeleImpacts) return;
+    const cyc = state.cycle, phaseOf = TC.LAYOUTS[kind].phaseOf, fmt = window.TeleImpacts.fmtDay;
+    const cell = (p, head) => {
+      const amp = Math.hypot(p.x, p.y), ph = phaseOf(p.x, p.y);
+      return amp >= 1 ? { head, text: `Phase ${ph} · ${amp.toFixed(1)}`, cat: ph - 1 } : { head, text: `weak · ${amp.toFixed(1)}`, cat: null };
+    };
+    const rows = [];
+    const t1 = Math.floor(runMs(cyc) / DAY) * DAY;
+    const obs = kind === "mjo" ? mjoObs(cyc, 40) : gwoFromDaily(obsAamDaily(), t1 - 40 * DAY, t1);
+    let defaultCat = null;
+    if (obs.length) {
+      const last = obs[obs.length - 1];
+      const pick = back => obs.filter(p => p.t <= last.t - back * DAY).pop();
+      rows.push({ label: "Observed", color: "#000", cells: [[10, pick(10)], [5, pick(5)], [0, last]].filter(x => x[1]).map(([b, p]) => cell(p, `${b ? b + " days ago" : "latest"} · ${fmt(p.t)}`)) });
+      if (Math.hypot(last.x, last.y) >= 1) defaultCat = phaseOf(last.x, last.y) - 1;
+    }
+    for (const m of MODEL_KEYS) {
+      const r = runAtOrBefore(m, cyc, C.sameCycleHours);
+      const j = r && await loadRun(m, r);
+      const pts = j && (kind === "mjo" ? mjoPts(j) : gwoRun(j));
+      if (!pts || !pts.length) continue;
+      const cells = [0, 5, 10, 15].map(L => pts.find(p => p.lead === L)).filter(Boolean).map(p => cell(p, `day ${p.lead} · ${fmt(p.t)}`));
+      if (cells.length) rows.push({ label: `${C.models[m].short} ${runLabel(r)}`, color: C.models[m].color, cells });
+    }
+    await window.TeleImpacts.panel($("#impacts"), { ctx: appContext(), product: kind, signals: rows, defaultCat,
+      signalNote: kind === "mjo" ? "“weak” = amplitude below 1 (inside the circle), which the composites leave out." : "“weak” = amplitude below 1, which the composites leave out." });
+  }
+
   window.__teleTest = { gwoFromDaily: (m, a, b) => gwoFromDaily(m, a, b), GWO_TEND, DAY };   // for automated checks
 
   function appContext() {
@@ -466,21 +496,23 @@
       return;
     }
     if (tab === "gwo") {
-      main.innerHTML = `<div class="mjo"><div class="card"><div class="chart" id="phase"></div></div><div class="card"><div class="chart" id="amp"></div><div class="notes" id="gwoNotes"></div></div></div><div class="runs" id="runsUsed"></div>`;
+      main.innerHTML = `<div class="mjo"><div class="card"><div class="chart" id="phase"></div></div><div class="card"><div class="chart" id="amp"></div><div class="notes" id="gwoNotes"></div></div></div><div class="runs" id="runsUsed"></div><div id="impacts"></div>`;
       const { used, missing } = await gwoView($("#phase"), $("#amp"));
       $("#runsUsed").textContent = used.length ? "Runs shown: " + used.join(" · ") : "";
       $("#gwoNotes").innerHTML = `<p>Global Wind Oscillation (Weickmann &amp; Berry): x = global relative AAM anomaly, y = its tendency, both standardized, after a 5-day running mean; tendency from a 5-point (4th-order) difference. Orbits run clockwise: phases 2–3 low AAM (La Niña-like), 4–5 AAM rising, 6–7 high AAM (El Niño-like), 8–1 AAM falling.</p>` +
         `<p>Forecast tracks continue the observed AAM series with each run's daily-mean AAM, so the first few days blend analysis and forecast. Large markers every 5 days.</p>` +
         (missing.length ? `<p><b>No AAM in:</b> ${missing.join(", ")} (AAM is switched off for that model in <code>pipeline/config.json</code> to save bandwidth).</p>` : "");
+      await impactsPanel("gwo");
       return;
     }
     if (tab === "mjo") {
-      main.innerHTML = `<div class="mjo"><div class="card"><div class="chart" id="phase"></div></div><div class="card"><div class="chart" id="amp"></div><div class="notes" id="mjoNotes"></div></div></div><div class="runs" id="runsUsed"></div>`;
+      main.innerHTML = `<div class="mjo"><div class="card"><div class="chart" id="phase"></div></div><div class="card"><div class="chart" id="amp"></div><div class="notes" id="mjoNotes"></div></div></div><div class="runs" id="runsUsed"></div><div id="impacts"></div>`;
       const { used, windOnly } = await mjoView($("#phase"), $("#amp"));
       $("#runsUsed").textContent = used.length ? "Runs shown: " + used.join(" · ") : "";
       $("#mjoNotes").innerHTML = `<p>Large markers every 5 days of lead time. Points inside the gray circle (amplitude &lt; 1) are a weak or incoherent MJO.</p>` +
         (windOnly.length ? `<p><b>Wind-only RMM</b> (no OLR in the model output): ${windOnly.join(", ")}. These tend to show less amplitude than the full index.</p>` : "") +
         `<p>Observed track: last 40 days from the analysis history.</p>`;
+      await impactsPanel("mjo");
       return;
     }
     main.innerHTML = `<div class="card"><div class="chart" id="chart"></div></div><div class="runs" id="runsUsed"></div>`;

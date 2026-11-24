@@ -26,6 +26,10 @@ window.TELE_CONFIG = {
     mjo: { name: "Madden-Julian Oscillation",  abbr: "MJO" }
   },
 
+  // Point read out under the US composite maps (MJO, GWO, Bering Sea Rule and Typhoon Rule
+  // tabs). Clicking a map reads out another point for that visit.
+  home: { name: "Jackson, KY", lat: 37.59, lon: -83.32 },
+
   // ---- Bering Sea Rule tab ----------------------------------------------------------
   bsr: {
     lagDays: 18,                       // default lag (adjustable on the page, 10-25 days)

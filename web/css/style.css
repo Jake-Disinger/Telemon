@@ -80,3 +80,35 @@ table.ty td { border-bottom:1px solid var(--line); padding:6px 8px; vertical-ali
 table.ty tr.rule td { background:#fff1f3; }
 .pill { background:#c0234a; color:#fff; border-radius:9px; padding:1px 7px; font-size:11px; }
 main > .card + .card { margin-top:12px; }
+
+/* ---- US impacts (composites) panel ---- */
+.imp { margin-top:12px; }
+.imp-title { font-weight:700; font-size:17px; padding:4px 4px 8px; }
+.imp-ctl { display:flex; flex-wrap:wrap; gap:8px 20px; align-items:center; padding:0 4px 8px; }
+.imp-ctl select { max-width:260px; }
+.imp-sigs { padding:4px 4px 10px; overflow-x:auto; }
+.imp-sigs .lab { display:block; margin-bottom:4px; }
+.imp-sigtab { border-collapse:separate; border-spacing:3px; }
+.imp-sigtab th { text-align:left; font-size:12.5px; white-space:nowrap; padding-right:8px; }
+.imp-sigtab td { border:1px solid #d5dae0; border-radius:4px; padding:3px 8px; font-size:12px; line-height:1.3; white-space:nowrap; background:#fff; }
+.imp-sigtab td span { display:block; color:#555; font-size:11px; }
+.imp-sigtab td.pick { cursor:pointer; }
+.imp-sigtab td.pick:hover { border-color:#14243a; }
+.imp-sigtab td.on { outline:2px solid #14243a; }
+.imp-sigtab td.weak b { color:#777; font-weight:400; }
+.imp-signote { font-size:11.5px; margin-top:2px; }
+.imp-grid { display:grid; grid-template-columns: minmax(420px, 760px) minmax(320px, 430px); gap:12px; align-items:start; }
+@media (max-width: 1150px) { .imp-grid { grid-template-columns: 1fr; } }
+.imp-tab { border-collapse:collapse; width:100%; font-size:13px; margin-bottom:8px; }
+.imp-tab th { text-align:right; font-size:11.5px; color:var(--muted); font-weight:700; padding:2px 6px; }
+.imp-tab td { padding:3px 6px; border-bottom:1px solid #eef0f2; text-align:right; font-family: Consolas, "DejaVu Sans Mono", monospace; }
+.imp-tab td:first-child { text-align:left; font-family:inherit; cursor:pointer; }
+.imp-tab tr.on td:first-child { font-weight:700; text-decoration:underline; }
+.imp-tab tr.pt td { border-bottom:2px solid #c9ced4; font-weight:700; }
+.imp-tab tr.pt td:first-child { cursor:default; }
+.imp-sum { font-size:13.5px; padding:10px 6px 4px; line-height:1.5; }
+.imp-sum .warn { color:#9a3412; }
+.imp-about { font-size:13px; color:#333; padding:6px 6px 2px; }
+.imp-about summary { cursor:pointer; color:#14243a; font-weight:700; }
+.imp-about p, .imp-about-p { line-height:1.5; max-width:1100px; }
+.imp-links a { color:#1a5cff; }
