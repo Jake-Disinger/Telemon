@@ -29,9 +29,10 @@ window.TELE_CONFIG = {
   // ---- Bering Sea Rule tab ----------------------------------------------------------
   bsr: {
     lagDays: 18,                       // default lag (adjustable on the page, 10-25 days)
-    // where the US outline is placed: its center (39N, 96W) goes to lat/lon (deg E), at
-    // `scale` x true size, rotated `rot` degrees. Fitted to the classic OPC overlay charts.
-    overlay: { lat: 48.0, lon: 181.0, scale: 1.15, rot: 0 },
+    // where the US outline is placed, as on the classic overlay charts: a flat US map whose
+    // center (39N, 96W) lands at lat/lon (deg E), `scale` x the chart's scale there, rotated
+    // `rot` degrees counter-clockwise. Fitted to a classic Bering Sea Rule chart.
+    overlay: { lat: 46.25, lon: 172.97, scale: 1.22, rot: 10.3 },
     mapBounds: { latN: 70, latS: 18, lonW: 125, lonE: 240 },
     // OPC Pacific charts. If an image doesn't load, fix its URL here. `cal` is the chart's
     // pixel calibration: click "Calibrate" on the page, then paste the result here so
