@@ -27,9 +27,12 @@ class Climatology:
         c = np.load(path, allow_pickle=False)
         # model-vs-reanalysis AAM offset written by calibrate_aam.py (kg m2 s-1)
         self.aam_offset = 0.0
+        self.offsets = {}
         if calibration and os.path.exists(calibration):
             with open(calibration) as f:
-                self.aam_offset = float(json.load(f).get("aam_offset", 0.0))
+                cal = json.load(f)
+            self.aam_offset = float(cal.get("aam_offset", 0.0))
+            self.offsets = {k: float(v) for k, v in cal.get("index_offsets", {}).items()}
         self.z500_mean = c["z500_mean"]
         self.z500_std = c["z500_std"]
         self.z1000_mean = c["z1000_mean"]
@@ -48,7 +51,9 @@ class Climatology:
         self.rpca = None
         if "nao_rp" in c.files:
             self.rpca = {"sigma": c["rpca_sigma"], "nao": c["nao_rp"], "pna": c["pna_rp"],
-                         "nao_sd": c["nao_rp_sd"], "pna_sd": c["pna_rp_sd"]}
+                         "nao_sd": c["nao_rp_sd"], "pna_sd": c["pna_rp_sd"],
+                         "nao_b": c["nao_rp_b"] if "nao_rp_b" in c.files else np.zeros(12),
+                         "pna_b": c["pna_rp_b"] if "pna_rp_b" in c.files else np.zeros(12)}
 
     def month_weights(self, valid):
         """Blend neighbouring calendar-month patterns so values don't jump at month ends."""
@@ -62,8 +67,8 @@ class Climatology:
 
     def rpca_index(self, name, valid, anom):
         r = self.rpca
-        return sum(w * ix.rpca_project(anom, r["sigma"][k], r[name][k], r[name + "_sd"][k])
-                   for k, w in self.month_weights(valid))
+        return sum(w * (ix.rpca_project(anom, r["sigma"][k], r[name][k], r[name + "_sd"][k]) + r[name + "_b"][k])
+                   for k, w in self.month_weights(valid)) - self.offsets.get(name, 0.0)
 
     # raw (un-normalized) indices for one valid time ---------------------------
     def raw_indices(self, valid, z500=None, z1000=None, u=None):
