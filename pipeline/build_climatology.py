@@ -103,59 +103,7 @@ def height_climo(year_data):
         a5.append(f5); a1.append(f1); mids.append(days[len(days) // 2])
     return dict(z500_mean=z500_mean, z500_std=z500_std, z1000_mean=z1000_mean,
                 mon_a500=np.array(a5), mon_a1000=np.array(a1), mon_mid=np.array(mids),
-                mon_year=np.array([y for y, m, _, _ in monthly]), mon_month=np.array([m for _, m, _, _ in monthly]),
-                mon_raw500=np.array([z5 for _, _, z5, _ in monthly]))
-
-
-def monthly_to_daily(clim12, nharm=3):
-    """12 calendar-month means (12, ...) -> smooth daily values (366, ...) using the
-    first nharm annual harmonics, corrected for the smoothing of monthly averaging."""
-    c = np.fft.rfft(clim12, axis=0)
-    x = (np.arange(366) + 0.5) / 366.0 * 12.0 - 0.5           # position in months (0 = mid-Jan)
-    out = np.repeat((c[0].real / 12.0)[None], 366, axis=0)
-    for k in range(1, nharm + 1):
-        sinc = np.sinc(k / 12.0)                                 # monthly-mean attenuation
-        ph = np.exp(2j * np.pi * k * x / 12.0).reshape((-1,) + (1,) * (clim12.ndim - 1))
-        out = out + 2.0 * (c[k][None] * ph).real / 12.0 / sinc
-    return out
-
-
-def monthly_heights(years, h_daily=None):
-    """Official PSL monthly-mean 500/1000 hPa heights -> monthly anomalies and a daily
-    climatological mean. Also reports how the daily download compares (diagnostic)."""
-    ds = ra.open_nc(ra.URLS["monthly"].format(var="hgt"))
-    tm = ra.times(ds)
-    sel = [i for i, t in enumerate(tm) if years[0] <= t.year <= years[-1]]
-    li = ra.level_index(ds, [500, 1000])
-    z5 = np.ma.filled(ds.variables["hgt"][sel[0]:sel[-1] + 1, li[0], NH, :].astype(float), np.nan)
-    z1 = np.ma.filled(ds.variables["hgt"][sel[0]:sel[-1] + 1, li[1], NH, :].astype(float), np.nan)
-    ds.close()
-    tsel = [tm[i] for i in sel]
-    mon = np.array([t.month for t in tsel]); yrs = np.array([t.year for t in tsel])
-    c5 = np.array([np.nanmean(z5[mon == m], 0) for m in range(1, 13)])
-    c1 = np.array([np.nanmean(z1[mon == m], 0) for m in range(1, 13)])
-    a5 = z5 - c5[mon - 1]; a1 = z1 - c1[mon - 1]
-    i20 = int(np.argmin(np.abs(LAT[NH] - 20))); i60 = int(np.argmin(np.abs(LAT[NH] - 60)))
-    log.info("monthly 500 hPa anomaly std (official file): 20N %.1f m, 60N %.1f m",
-             np.nanstd(a5[:, i20]), np.nanstd(a5[:, i60]))
-    if h_daily is not None:                                    # diagnostic: daily download vs official
-        dm = {(int(y), int(m)): k for k, (y, m) in enumerate(zip(h_daily["mon_year"], h_daily["mon_month"]))}
-        per_year = {}
-        for k, (y, m) in enumerate(zip(yrs, mon)):
-            j = dm.get((int(y), int(m)))
-            if j is None:
-                continue
-            daily_mean = h_daily["mon_raw500"][j]
-            per_year.setdefault(int(y), []).append(np.sqrt(np.nanmean((daily_mean - z5[k]) ** 2)))
-        rms = {y: float(np.mean(v)) for y, v in per_year.items()}
-        worst = sorted(rms.items(), key=lambda kv: -kv[1])[:6]
-        log.info("daily download vs official monthly 500 hPa means, RMS by year (m): median %.1f; worst %s",
-                 np.median(list(rms.values())), ", ".join(f"{y}: {v:.0f}" for y, v in worst))
-    full = lambda a: np.concatenate([a, np.zeros((a.shape[0], 73 - a.shape[1], 144))], axis=1)
-    mids = [cal_index(dt.date(int(y), int(m), 15)) for y, m in zip(yrs, mon)]
-    d5, d1 = monthly_to_daily(c5), monthly_to_daily(c1)
-    return dict(mon_a500=full(np.nan_to_num(a5)), mon_a1000=full(np.nan_to_num(a1)), mon_mid=np.array(mids),
-                mon_year=yrs, mon_month=mon, z500_mean=full(d5).astype(np.float32), z1000_mean=full(d1).astype(np.float32))
+                mon_year=np.array([y for y, m, _, _ in monthly]), mon_month=np.array([m for _, m, _, _ in monthly]))
 
 
 def rpca_climo(h):
@@ -269,11 +217,6 @@ def main():
             yield ts, z[:, 0], z[:, 1]
     log.info("heights ...")
     h = height_climo(heights())
-    log.info("official monthly heights ...")
-    hm = monthly_heights(list(years), h)
-    # monthly anomalies (patterns, normalization) and the daily mean climatology now come
-    # from the official monthly file; the daily download only supplies the daily std
-    h.update(hm)
 
     log.info("monthly zonal wind for AAM ...")
     ds = ra.open_nc(ra.URLS["monthly"].format(var="uwnd"))
