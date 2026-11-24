@@ -90,12 +90,26 @@ jobs:
           TELE_CACHE_DIR: ${{ github.workspace }}/pipeline/cache
         run: python pipeline/calibrate_aam.py --days 150
 
+      - name: Clear forecast runs made with the old climatology
+        if: inputs.rebuild
+        env:
+          TELE_DATA_DIR: ${{ github.workspace }}/site/data
+          TELE_STATE_DIR: ${{ github.workspace }}/site/_state
+        run: python pipeline/reset_runs.py
+
       - name: Seed observed history from GFS analyses
         env:
           TELE_DATA_DIR: ${{ github.workspace }}/site/data
           TELE_STATE_DIR: ${{ github.workspace }}/site/_state
           TELE_CLIMATOLOGY: ${{ github.workspace }}/pipeline/climatology.npz
         run: python pipeline/backfill_analysis.py --days ${{ inputs.backfill_days }}
+
+      - name: Compare NAO / AO / PNA with CPC
+        continue-on-error: true
+        env:
+          TELE_DATA_DIR: ${{ github.workspace }}/site/data
+          TELE_STATE_DIR: ${{ github.workspace }}/site/_state
+        run: python pipeline/verify_indices.py
 
       - name: Save data
         run: |
