@@ -13,6 +13,10 @@ on:
       backfill_days:
         description: "Days of observed history to seed"
         default: "150"
+      composites:
+        description: "Rebuild the US composites even if they already exist"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -103,6 +107,26 @@ jobs:
           TELE_STATE_DIR: ${{ github.workspace }}/site/_state
           TELE_CLIMATOLOGY: ${{ github.workspace }}/pipeline/climatology.npz
         run: python pipeline/backfill_analysis.py --days ${{ inputs.backfill_days }}
+
+      - name: US composites for the MJO, GWO, Bering Sea and Typhoon tabs (about 20-40 minutes the first time)
+        id: comp
+        continue-on-error: true
+        env:
+          TELE_CACHE_DIR: ${{ github.workspace }}/pipeline/cache
+        run: |
+          if [ -f site/data/composites/index.json ] && [ "${{ inputs.composites }}" != "true" ] && [ "${{ inputs.rebuild }}" != "true" ]; then
+            echo "US composites already built (tick 'Rebuild the US composites' to redo them)."
+          else
+            echo "built=yes" >> "$GITHUB_OUTPUT"
+            python pipeline/build_composites.py --climatology pipeline/climatology.npz --out site/data/composites
+          fi
+
+      - name: Save download progress (composites)
+        if: always() && steps.comp.outputs.built == 'yes'
+        uses: actions/cache/save@v4
+        with:
+          path: pipeline/cache
+          key: psl-cache-${{ github.run_id }}-composites
 
       - name: Compare NAO / AO / PNA with CPC
         continue-on-error: true
