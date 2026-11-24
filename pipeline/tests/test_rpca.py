@@ -69,3 +69,16 @@ def test_cpc_regression_reproduces_a_linear_index():
     y = A @ true_w + 0.1
     w, b, r_in, r_cv = bc.fit_index(A, y, np.array([d.year for d in days]), n_modes=20)
     assert r_in > 0.99 and r_cv > 0.99, (r_in, r_cv)
+
+
+def test_cpc_regression_matches_target_spread():
+    """With a noisy target the fit should keep its correlation and match the target's spread."""
+    rng = np.random.default_rng(9)
+    n, p = 3000, 400
+    A = rng.normal(size=(n, 15)) @ rng.normal(size=(15, p)) + rng.normal(0, 0.5, (n, p))
+    y = A @ (rng.normal(size=p) * 0.01) + rng.normal(0, 0.6, n)        # target only partly predictable
+    w, b, r_in, r_cv = bc.fit_index(A, y, np.arange(n) // 365, n_modes=15)
+    pred = A @ w + b
+    assert abs(np.std(pred) / np.std(y) - 1) < 0.01
+    assert abs(np.mean(pred) - np.mean(y)) < 1e-6
+    assert r_cv > 0.5
