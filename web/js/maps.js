@@ -36,6 +36,45 @@
     return [lat / D2R, ((lon / D2R) % 360 + 360) % 360];
   }
   const US_ANCHOR = [39.0, -96.0];
+
+  // Lambert conformal conic US map (standard parallels 33N/45N, centered 39N 96W), in km
+  function lccUS(lat, lon) {
+    const f = d => d * D2R, p1 = f(33), p2 = f(45), lat0 = f(US_ANCHOR[0]), lon0 = US_ANCHOR[1];
+    const n = Math.log(Math.cos(p1) / Math.cos(p2)) / Math.log(Math.tan(Math.PI / 4 + p2 / 2) / Math.tan(Math.PI / 4 + p1 / 2));
+    const F = Math.cos(p1) * Math.pow(Math.tan(Math.PI / 4 + p1 / 2), n) / n;
+    const rho = R_KM * F / Math.pow(Math.tan(Math.PI / 4 + f(lat) / 2), n);
+    const rho0 = R_KM * F / Math.pow(Math.tan(Math.PI / 4 + lat0 / 2), n);
+    const th = n * f(lon - lon0);
+    return [rho * Math.sin(th), rho0 - rho * Math.cos(th)];
+  }
+  /** The classic Bering Sea Rule overlay: a flat US map pasted onto the chart at one scale.
+   *  P = {lat, lon} where the US center lands, `scale` relative to the chart's own scale at
+   *  that point, `rot` degrees counter-clockwise. projFn(lat, lon) -> [x, y] in chart pixels.
+   *  Returns a function mapping US (lat, lon) -> chart pixels. */
+  function pasteOverlay(P, projFn) {
+    const A = projFn(P.lat, P.lon), d = 0.25;
+    const E = projFn(P.lat, P.lon + d), N = projFn(P.lat + d, P.lon);
+    const kmE = d * 111.32 * Math.cos(P.lat * D2R), kmN = d * 110.6;
+    const e = [(E[0] - A[0]) / kmE, (E[1] - A[1]) / kmE];       // pixels per km toward east
+    const nn = [(N[0] - A[0]) / kmN, (N[1] - A[1]) / kmN];      // pixels per km toward north
+    const r = (P.rot || 0) * D2R, c = Math.cos(r), sn = Math.sin(r), s = P.scale;
+    return (lat, lon) => {
+      const [x0, y0] = lccUS(lat, lon), x = (c * x0 - sn * y0) * s, y = (sn * x0 + c * y0) * s;
+      return [A[0] + x * e[0] + y * nn[0], A[1] + x * e[1] + y * nn[1]];
+    };
+  }
+  function drawPixelLines(g, lines, toPx, attrs, maxJump) {
+    let d = "";
+    for (const ln of lines) {
+      let prev = null;
+      for (let i = 0; i < ln.length; i += 2) {
+        const [x, y] = toPx(ln[i + 1], ln[i]);
+        d += (!prev || Math.hypot(x - prev[0], y - prev[1]) > maxJump ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1);
+        prev = [x, y];
+      }
+    }
+    return el("path", Object.assign({ d, fill: "none" }, attrs), g);
+  }
   /** US (lat, lon) -> (lat, lon 0..360) on the Pacific for overlay params {lat, lon, scale, rot} */
   function bsrTransform(lat, lon, P) {
     let [x, y] = aeqdF(lat, lon, US_ANCHOR[0], US_ANCHOR[1]);
@@ -61,13 +100,9 @@
     return el("path", Object.assign({ d, fill: "none" }, attrs), g);
   }
   function overlayLines(g, us, pr, P, attrs) {
-    const conv = lines => lines.map(ln => {
-      const out = [];
-      for (let i = 0; i < ln.length; i += 2) { const [la, lo] = bsrTransform(ln[i + 1], ln[i], P); out.push(lo, la); }
-      return out;
-    });
-    if (us.context) drawLines(g, conv(us.context), pr, Object.assign({}, attrs, { "stroke-width": (attrs["stroke-width"] || 1.4) * 0.7, opacity: 0.6 }), true);
-    drawLines(g, conv(us.states), pr, attrs, true);
+    const toPx = pasteOverlay(P, (la, lo) => [pr.x(lo), pr.y(la)]);
+    if (us.context) drawPixelLines(g, us.context, toPx, Object.assign({}, attrs, { "stroke-width": (attrs["stroke-width"] || 1.4) * 0.7, opacity: 0.6 }), pr.W * 0.3);
+    drawPixelLines(g, us.states, toPx, attrs, pr.W * 0.3);
   }
   function graticule(g, pr, step) {
     const b = pr.b, dot = { stroke: "#8a8a8a", "stroke-width": 0.7, "stroke-dasharray": "1.5,4" };
@@ -329,18 +364,8 @@
   }
   function chartOverlay(svg, cal, us, P, opts) {
     const g = el("g", { "pointer-events": "none" }, svg);
-    const draw = (lines, attrs) => {
-      let d = "";
-      for (const ln of lines) {
-        let prev = null;
-        for (let i = 0; i < ln.length; i += 2) {
-          const [la, lo] = bsrTransform(ln[i + 1], ln[i], P), [x, y] = calProject(cal, la, lo);
-          d += (!prev || Math.hypot(x - prev[0], y - prev[1]) > 200 ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1);
-          prev = [x, y];
-        }
-      }
-      el("path", Object.assign({ d, fill: "none" }, attrs), g);
-    };
+    const toPx = pasteOverlay(P, (la, lo) => calProject(cal, la, lo));
+    const draw = (lines, attrs) => drawPixelLines(g, lines, toPx, attrs, 400);
     const w = opts && opts.width || 1.6;
     if (us.context) draw(us.context, { stroke: "#000", "stroke-width": w * 0.7, opacity: 0.55 });
     draw(us.states, { stroke: "#000", "stroke-width": w, "stroke-linejoin": "round" });
@@ -351,5 +376,5 @@
     return g;
   }
 
-  window.TeleMaps = { projection, bsrTransform, bsrMap, trackMap, timeline, solveCal, calProject, chartOverlay, CAT };
+  window.TeleMaps = { projection, bsrTransform, pasteOverlay, lccUS, bsrMap, trackMap, timeline, solveCal, calProject, chartOverlay, CAT };
 })();
