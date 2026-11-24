@@ -103,7 +103,131 @@ def height_climo(year_data):
         a5.append(f5); a1.append(f1); mids.append(days[len(days) // 2])
     return dict(z500_mean=z500_mean, z500_std=z500_std, z1000_mean=z1000_mean,
                 mon_a500=np.array(a5), mon_a1000=np.array(a1), mon_mid=np.array(mids),
-                mon_year=np.array([y for y, m, _, _ in monthly]), mon_month=np.array([m for _, m, _, _ in monthly]))
+                mon_year=np.array([y for y, m, _, _ in monthly]), mon_month=np.array([m for _, m, _, _ in monthly]),
+                mon_raw500=np.array([z5 for _, _, z5, _ in monthly]))
+
+
+def monthly_to_daily(clim12, nharm=3):
+    """12 calendar-month means (12, ...) -> smooth daily values (366, ...) using the
+    first nharm annual harmonics, corrected for the smoothing of monthly averaging."""
+    c = np.fft.rfft(clim12, axis=0)
+    x = (np.arange(366) + 0.5) / 366.0 * 12.0 - 0.5           # position in months (0 = mid-Jan)
+    out = np.repeat((c[0].real / 12.0)[None], 366, axis=0)
+    for k in range(1, nharm + 1):
+        sinc = np.sinc(k / 12.0)                                 # monthly-mean attenuation
+        ph = np.exp(2j * np.pi * k * x / 12.0).reshape((-1,) + (1,) * (clim12.ndim - 1))
+        out = out + 2.0 * (c[k][None] * ph).real / 12.0 / sinc
+    return out
+
+
+def monthly_heights(years, h_daily=None):
+    """Official PSL monthly-mean 500/1000 hPa heights -> monthly anomalies and a daily
+    climatological mean. Also reports how the daily download compares (diagnostic)."""
+    ds = ra.open_nc(ra.URLS["monthly"].format(var="hgt"))
+    tm = ra.times(ds)
+    sel = [i for i, t in enumerate(tm) if years[0] <= t.year <= years[-1]]
+    li = ra.level_index(ds, [500, 1000])
+    z5 = np.ma.filled(ds.variables["hgt"][sel[0]:sel[-1] + 1, li[0], NH, :].astype(float), np.nan)
+    z1 = np.ma.filled(ds.variables["hgt"][sel[0]:sel[-1] + 1, li[1], NH, :].astype(float), np.nan)
+    ds.close()
+    tsel = [tm[i] for i in sel]
+    mon = np.array([t.month for t in tsel]); yrs = np.array([t.year for t in tsel])
+    c5 = np.array([np.nanmean(z5[mon == m], 0) for m in range(1, 13)])
+    c1 = np.array([np.nanmean(z1[mon == m], 0) for m in range(1, 13)])
+    a5 = z5 - c5[mon - 1]; a1 = z1 - c1[mon - 1]
+    i20 = int(np.argmin(np.abs(LAT[NH] - 20))); i60 = int(np.argmin(np.abs(LAT[NH] - 60)))
+    log.info("monthly 500 hPa anomaly std (official file): 20N %.1f m, 60N %.1f m",
+             np.nanstd(a5[:, i20]), np.nanstd(a5[:, i60]))
+    if h_daily is not None:                                    # diagnostic: daily download vs official
+        dm = {(int(y), int(m)): k for k, (y, m) in enumerate(zip(h_daily["mon_year"], h_daily["mon_month"]))}
+        per_year = {}
+        for k, (y, m) in enumerate(zip(yrs, mon)):
+            j = dm.get((int(y), int(m)))
+            if j is None:
+                continue
+            daily_mean = h_daily["mon_raw500"][j]
+            per_year.setdefault(int(y), []).append(np.sqrt(np.nanmean((daily_mean - z5[k]) ** 2)))
+        rms = {y: float(np.nanmean(v)) if np.isfinite(v).any() else float("nan") for y, v in per_year.items()}
+        worst = sorted(rms.items(), key=lambda kv: -(kv[1] if np.isfinite(kv[1]) else 1e9))[:6]
+        log.info("daily download vs official monthly 500 hPa means, RMS by year (m): median %.1f; worst %s",
+                 np.nanmedian(list(rms.values())), ", ".join(f"{y}: {v:.0f}" for y, v in worst))
+    full = lambda a: np.concatenate([a, np.zeros((a.shape[0], 73 - a.shape[1], 144))], axis=1)
+    mids = [cal_index(dt.date(int(y), int(m), 15)) for y, m in zip(yrs, mon)]
+    d5, d1 = monthly_to_daily(c5), monthly_to_daily(c1)
+    bad = sorted(y for y in years if not (y in (rms if h_daily is not None else {}) and np.isfinite(rms[y]) and rms[y] < 15))
+    if h_daily is not None:
+        log.info("daily 500 hPa years excluded from calibration (missing or inconsistent with the official monthly means): %s", bad or "none")
+    return dict(bad_years=bad, mon_a500=full(np.nan_to_num(a5)), mon_a1000=full(np.nan_to_num(a1)), mon_mid=np.array(mids),
+                mon_year=yrs, mon_month=mon, z500_mean=full(d5).astype(np.float32), z1000_mean=full(d1).astype(np.float32))
+
+
+CPC_URL = "https://ftp.cpc.ncep.noaa.gov/cwlinks/norm.daily.{name}.cdas.z500.19500101_current.csv"
+
+
+def fetch_cpc(name):
+    from tele.gribio import http_get
+    out = {}
+    for line in http_get(CPC_URL.format(name=name)).decode().splitlines():
+        p = line.strip().split(",")
+        try:
+            out[dt.date(int(p[0]), int(p[1]), int(p[2]))] = float(p[3])
+        except (ValueError, IndexError):
+            continue
+    return out
+
+
+def fit_index(A, y, groups, n_modes=30, folds=5):
+    """Least-squares weights w, b with A @ w + b ~ y, regularized by truncating to the
+    leading n_modes EOFs of A. Returns w, b, in-sample r, cross-validated r (by year)."""
+    def fit(Ai, yi):
+        mu, ym = Ai.mean(0), yi.mean()
+        e = ix.leading_eofs(Ai - mu, n_modes)
+        P = (Ai - mu) @ e.T
+        coef = np.linalg.lstsq(P, yi - ym, rcond=None)[0]
+        w = e.T @ coef
+        return w, ym - mu @ w
+    w, b = fit(A, y)
+    r_in = float(np.corrcoef(A @ w + b, y)[0, 1])
+    ug = np.unique(groups)
+    pred = np.empty_like(y)
+    for f in range(folds):
+        test = np.isin(groups, ug[f::folds])
+        wf, bf = fit(A[~test], y[~test])
+        pred[test] = A[test] @ wf + bf
+    return w, b, r_in, float(np.corrcoef(pred, y)[0, 1])
+
+
+def cpc_regression(daily500, h, sigma):
+    """Patterns that reproduce CPC's daily NAO and PNA from daily 500 hPa anomalies,
+    per calendar-month window, fitted on 1991-2020 (bad years skipped)."""
+    m = ix.domain_mask(ix.RPCA_DOMAIN)
+    mnh = m[NH]
+    sw = np.sqrt(np.cos(np.deg2rad(LAT)))[:, None] * np.ones((1, 144))
+    days, rows = [], []
+    for ts, z in daily500:
+        for t, f in zip(ts, z):
+            if t.year in h["bad_years"] or not np.isfinite(f[mnh]).all():
+                continue
+            days.append(t.date()); rows.append(f[mnh] - h["z500_mean"][cal_index(t)][NH][mnh])
+    anoms = np.array(rows, dtype=np.float32)
+    months = np.array([d.month for d in days]); yrs = np.array([d.year for d in days])
+    log.info("CPC calibration: %d usable days", len(days))
+    out = {}
+    for name in ("nao", "pna"):
+        cpc = fetch_cpc(name)
+        pats, bs = [], []
+        for mo in range(1, 13):
+            win = np.isin(months, [(mo - 2) % 12 + 1, mo, mo % 12 + 1])
+            have = np.array([d in cpc for d in days]) & win
+            A = anoms[have] / sigma[mo - 1][m] * sw[m]
+            y = np.array([cpc[d] for d, ok in zip(days, have) if ok])
+            w, b, r_in, r_cv = fit_index(A.astype(float), y, yrs[have])
+            pat = np.zeros((73, 144)); pat[m] = w
+            pats.append(pat); bs.append(b)
+            log.info("CPC %s %s: %d days, fit r=%.3f, held-out-years r=%.3f",
+                     name.upper(), calendar.month_abbr[mo], len(y), r_in, r_cv)
+        out[name], out[name + "_b"] = np.array(pats), np.array(bs)
+    return out
 
 
 def rpca_climo(h):
@@ -211,12 +335,20 @@ def main():
     w = np.cos(np.deg2rad(LAT[EQ_MASK]))
     eqs = slice(int(np.where(EQ_MASK)[0][0]), int(np.where(EQ_MASK)[0][-1]) + 1)
 
+    daily500 = []                                              # kept for the CPC calibration
+
     def heights():
         for y in years:
             ts, z = ra.read_levels("hgt", y, [500, 1000], NH)
+            daily500.append((ts, z[:, 0].astype(np.float32)))
             yield ts, z[:, 0], z[:, 1]
     log.info("heights ...")
     h = height_climo(heights())
+    log.info("official monthly heights ...")
+    hm = monthly_heights(list(years), h)
+    # monthly anomalies (patterns, normalization) and the daily mean climatology now come
+    # from the official monthly file; the daily download only supplies the daily std
+    h.update(hm)
 
     log.info("monthly zonal wind for AAM ...")
     ds = ra.open_nc(ra.URLS["monthly"].format(var="uwnd"))
@@ -244,6 +376,13 @@ def main():
 
     ao_p, nao_p, names, mu, sd = index_constants(h, aam_anom)
     rp = rpca_climo(h)
+    try:
+        reg = cpc_regression(daily500, h, rp["sigma"])
+        for k in ("nao", "pna"):
+            if k in reg:
+                rp[k], rp[k + "_sd"], rp[k + "_b"] = reg[k], np.ones(12), reg[k + "_b"]
+    except Exception:                                          # noqa: BLE001
+        log.exception("CPC calibration failed; using the rotated-PCA patterns")
     # NAO/PNA from the RPCA patterns are already standardized (monthly sd = 1)
     for k in ("nao", "pna"):
         mu[names.index(k)], sd[names.index(k)] = 0.0, 1.0
@@ -256,6 +395,7 @@ def main():
         rmm_eofs=eofs, rmm_norms=norms, rmm_pcstd=pcstd, rmm_pcstd_wind=pcstd_w,
         rpca_sigma=rp["sigma"].astype(np.float32), nao_rp=rp["nao"].astype(np.float32), pna_rp=rp["pna"].astype(np.float32),
         nao_rp_sd=rp["nao_sd"], pna_rp_sd=rp["pna_sd"],
+        nao_rp_b=rp.get("nao_b", np.zeros(12)), pna_rp_b=rp.get("pna_b", np.zeros(12)),
         period=np.array([a.start, a.end]))
     log.info("wrote %s", a.out)
 

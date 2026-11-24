@@ -61,6 +61,8 @@ def compare(ours, cpc):
 def main(fetch=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=os.path.join(HERE, "config.json"))
+    ap.add_argument("--apply", action="store_true",
+                    help="store the mean NAO/PNA difference as a GFS-vs-reanalysis offset and correct the observed history")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     cfg = load_config(a.config)
@@ -85,8 +87,34 @@ def main(fetch=None):
         flag = "GOOD" if r["corr"] >= 0.9 else "CHECK" if r["corr"] >= 0.8 else "POOR"
         log.info("%-3s vs CPC: corr %.2f  mean diff %+.2f  sd %.2f vs %.2f  (%d days)  [%s]",
                  name.upper(), r["corr"], r["mean_diff"], r["sd_ours"], r["sd_cpc"], r["n"], flag)
+    if a.apply:
+        apply_offsets(cfg, analysis, report)
     with open(os.path.join(cfg["data_dir"], "verification.json"), "w") as f:
         json.dump(report, f, indent=1)
+
+
+def apply_offsets(cfg, analysis, report, names=("nao", "pna")):
+    """Add this run's mean difference to the stored offsets (so repeated runs converge)
+    and subtract it from the observed history already written."""
+    cal_path = os.path.join(cfg["state_dir"], "calibration.json")
+    cal = {}
+    if os.path.exists(cal_path):
+        with open(cal_path) as f:
+            cal = json.load(f)
+    offs = cal.setdefault("index_offsets", {})
+    for n in names:
+        r = report["indices"].get(n)
+        if not r or r["n"] < 60:
+            continue
+        d = r["mean_diff"]
+        offs[n] = round(offs.get(n, 0.0) + d, 3)
+        analysis[n] = [None if v is None else round(v - d, 3) for v in analysis.get(n, [])]
+        log.info("%s: offset now %+.3f (removed %+.3f from the observed history)", n.upper(), offs[n], d)
+    os.makedirs(cfg["state_dir"], exist_ok=True)
+    with open(cal_path, "w") as f:
+        json.dump(cal, f, indent=1)
+    with open(os.path.join(cfg["data_dir"], "analysis.json"), "w") as f:
+        json.dump(analysis, f, separators=(",", ":"))
 
 
 if __name__ == "__main__":

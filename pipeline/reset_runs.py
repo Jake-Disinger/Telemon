@@ -20,4 +20,11 @@ if os.path.exists(mp):
     man["models"] = {}
     with open(mp, "w") as f:
         json.dump(man, f)
+cp = os.path.join(cfg["state_dir"], "calibration.json")
+if os.path.exists(cp):
+    with open(cp) as f:
+        cal = json.load(f)
+    cal.pop("index_offsets", None)                    # re-measured against CPC after the backfill
+    with open(cp, "w") as f:
+        json.dump(cal, f, indent=1)
 print("forecast runs cleared; the next ingest will recompute the last 36 hours")

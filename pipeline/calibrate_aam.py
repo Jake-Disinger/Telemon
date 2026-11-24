@@ -103,8 +103,13 @@ def main():
              res["aam_offset"], res["aam_offset"] / sd, res["corr"], res["n"], *res["period"])
     path = os.path.join(cfg["state_dir"], "calibration.json")
     os.makedirs(cfg["state_dir"], exist_ok=True)
+    old = {}
+    if os.path.exists(path):
+        with open(path) as f:
+            old = json.load(f)
+    old.update(res)                                   # keep index_offsets written by verify_indices
     with open(path, "w") as f:
-        json.dump(res, f, indent=1)
+        json.dump(old, f, indent=1)
     log.info("wrote %s", path)
 
 
