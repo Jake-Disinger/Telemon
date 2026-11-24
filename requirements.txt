@@ -1,0 +1,6 @@
+numpy>=1.23
+scipy>=1.9
+requests>=2.28
+eccodes>=2.37      # GRIB decoding (pip wheel bundles the ecCodes library)
+netCDF4>=1.6       # only for build_climatology.py / backfill_analysis.py (OPeNDAP)
+pytest             # optional, for tests/
