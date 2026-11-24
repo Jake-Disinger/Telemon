@@ -109,7 +109,7 @@ jobs:
         env:
           TELE_DATA_DIR: ${{ github.workspace }}/site/data
           TELE_STATE_DIR: ${{ github.workspace }}/site/_state
-          run: python pipeline/verify_indices.py --apply
+        run: python pipeline/verify_indices.py --apply
 
       - name: Save data
         run: |
