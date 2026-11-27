@@ -1,20 +1,21 @@
 /* Display configuration — edit freely. Model keys must match pipeline/config.json. */
 window.TELE_CONFIG = {
-  siteLabel: "Teleconnection Monitor",   // shown in blue next to "Updated -->" (like weathermodels.com)
+  siteLabel: "Teleconnection Monitor",   // site name shown in each chart's subtitle
   dataPath: "data/",                     // where manifest.json / runs/ / analysis.json live
   refreshMinutes: 5,                     // poll for new runs (page follows "Latest" automatically)
   obsDaysBefore: 8,                      // days of observed index shown left of the init time
   daysAfter: 18,                         // forecast days shown on the multi-model chart
   sameCycleHours: 24,                    // all-model view: use a model's run if within this many hours of the cycle
 
-  // Legend order follows weathermodels.com: row 1 then row 2 (three per row).
+  // Model styles: one hue per model family (ECMWF teal, NOAA orange), a distinct symbol per
+  // model, filled = deterministic, hollow = ensemble mean. Legend order = order listed here.
   models: {
-    hres: { label: "ECMWF HRES",     short: "ECMWF HRES", color: "#1a6fef", symbol: "square", filled: true,  kind: "det" },
-    gfs:  { label: "NOAA GFS",       short: "NOAA GFS",   color: "#f03c3c", symbol: "circle", filled: true,  kind: "det" },
-    aifs: { label: "ECMWF AIFS",     short: "ECMWF AIFS", color: "#8a72de", symbol: "circle", filled: false, kind: "det" },
-    eps:  { label: "ECMWF EPS MEAN", short: "ECMWF EPS",  color: "#1a6fef", symbol: "square", filled: false, kind: "ens" },
-    gefs: { label: "NOAA GEFS",      short: "NOAA GEFS",  color: "#f03c3c", symbol: "circle", filled: false, kind: "ens" },
-    geps: { label: "CANADA GEPS",    short: "CANADA GEPS",color: "#1d9a2b", symbol: "circle", filled: false, kind: "ens" }
+    hres: { label: "ECMWF HRES",     short: "ECMWF HRES", color: "#1098ad", symbol: "diamond",  filled: true,  kind: "det" },
+    gfs:  { label: "NOAA GFS",       short: "NOAA GFS",   color: "#e8590c", symbol: "triangle", filled: true,  kind: "det" },
+    aifs: { label: "ECMWF AIFS",     short: "ECMWF AIFS", color: "#364fc7", symbol: "square",   filled: false, kind: "det" },
+    eps:  { label: "ECMWF EPS MEAN", short: "ECMWF EPS",  color: "#1098ad", symbol: "diamond",  filled: false, kind: "ens" },
+    gefs: { label: "NOAA GEFS",      short: "NOAA GEFS",  color: "#e8590c", symbol: "triangle", filled: false, kind: "ens" },
+    geps: { label: "CANADA GEPS",    short: "CANADA GEPS",color: "#c2255c", symbol: "circle",   filled: false, kind: "ens" }
   },
 
   indices: {

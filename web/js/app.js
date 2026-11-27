@@ -19,6 +19,8 @@
   const pad2 = n => String(n).padStart(2, "0");
   const runMs = r => Date.UTC(+r.slice(0, 4), +r.slice(4, 6) - 1, +r.slice(6, 8), +r.slice(8, 10));
   const runLabel = r => `${r.slice(8, 10)}Z ${r.slice(6, 8)}${MON[+r.slice(4, 6) - 1]}`;
+  const MONS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const runText = r => `Initialized ${r.slice(8, 10)}Z ${+r.slice(6, 8)} ${MONS[+r.slice(4, 6) - 1]} ${r.slice(0, 4)}`;
   const initLabel = r => `${r.slice(8, 10)}Z${r.slice(6, 8)}${MON[+r.slice(4, 6) - 1]}${r.slice(0, 4)}`;
 
   async function getJSON(path, nocache) {
@@ -79,7 +81,7 @@
     return analysis.times.map((r, i) => ({ t: runMs(r), v: analysis[idx][i] }))
       .filter(p => p.v !== null && p.t >= t0 && p.t <= t1 && new Date(p.t).getUTCHours() % 12 === 0);
   }
-  const OBS = { label: "Observed (analysis)", color: "#000", symbol: "circle", filled: false, lw: 2.2, ms: 6, legend: false };
+  const OBS = { label: "Observed (analysis)", color: "#334155", symbol: "circle", filled: true, lw: 2.6, ms: 3.2, legend: false };
 
   /* ---------- UI scaffolding ---------------------------------------------- */
   function buildTabs() {
@@ -181,7 +183,7 @@
     series.unshift(Object.assign({ points: obs }, OBS));
     const info = C.indices[idx];
     TC.lineChart(container, {
-      title: `${info.name} [${info.abbr}] Forecast`, sub: `Updated --> ${cycle}`, site: C.siteLabel,
+      title: `${info.name} [${info.abbr}] Forecast`, sub: runText(cycle), site: C.siteLabel,
       x0, x1, series, legend: legendAll(present), initTime: runMs(cycle), labelPhase: 1,
       yTitle: idx === "aam" ? "global relative AAM, standardized (σ)" : null
     });
@@ -199,18 +201,18 @@
       const nd = Math.round((ts[ts.length - 1] - ts[0]) / DAY);
       TC.boxChart(container, {
         title: `${md.short} ${info.name} [${info.abbr}]   ${d.members.length}-member ensemble`,
-        sub: `${nd}-day Forecast Init: ${initLabel(r)}`, site: C.siteLabel,
+        sub: `${nd}-day forecast · ${runText(r)}`, site: C.siteLabel,
         times: ts, stats: ts.map((_, i) => ensStats(d.members, i)), members: d.members,
         showMembers: state.members, memberColor: md.color
       });
     } else {
       const [x0, x1] = xRange(r);
       TC.lineChart(container, {
-        title: `${md.short} ${info.name} [${info.abbr}] Forecast`, sub: `Updated --> ${r}`, site: C.siteLabel,
+        title: `${md.short} ${info.name} [${info.abbr}] Forecast`, sub: runText(r), site: C.siteLabel,
         x0, x1, initTime: runMs(r), labelPhase: 1,
         series: [Object.assign({ points: obsSeries(idx, x0, runMs(r)) }, OBS),
                  { label: md.label, color: md.color, symbol: md.symbol, filled: md.filled, points: centralSeries(j, idx), ms: 6 }],
-        legend: [{ label: md.label, color: md.color, symbol: md.symbol, filled: md.filled }, { label: "OBSERVED", color: "#000", symbol: "circle", filled: false }]
+        legend: [{ label: md.label, color: md.color, symbol: md.symbol, filled: md.filled }, { label: "Observed", color: "#334155", symbol: "circle", filled: true }]
       });
     }
     return [`${md.short} ${runLabel(r)}`];
@@ -240,7 +242,7 @@
       legend.unshift({ label: runLabel(all[i]), color: col, symbol: md.symbol, filled: i === 0, textColor: i === 0 ? md.color : "#555" });
     }
     TC.lineChart(container, {
-      title: `${md.short}${md.kind === "ens" ? " mean" : ""} ${info.abbr} — last ${k} runs`, sub: `Updated --> ${all[0]}`, site: C.siteLabel,
+      title: `${md.short}${md.kind === "ens" ? " mean" : ""} ${info.abbr} — last ${k} runs`, sub: runText(all[0]), site: C.siteLabel,
       x0, x1, series, legend, initTime: runMs(all[0]), labelPhase: 1,
       legendX: 610, legendColW: 140, legendPerRow: 4, top: 70 + Math.max(0, Math.ceil(k / 4) - 2) * 22
     });
@@ -266,9 +268,9 @@
     const cyc = state.cycle, tracks = [], ampSeries = [], legend = [];
     let windOnly = [], used = [];
     const obs = mjoObs(cyc, 40);
-    const obsTrack = { label: "Observed (40 days)", color: "#222", lw: 2.2, ms: 2.5, points: obs, endLabel: obs.length ? "OBS" : null };
+    const obsTrack = { label: "Observed (40 days)", color: "#334155", lw: 2.2, ms: 2.5, points: obs, endLabel: obs.length ? "OBS" : null };
     const ampOf = pts => pts.map(p => ({ t: p.t, v: Math.hypot(p.x, p.y) }));
-    let title = `${C.indices.mjo.name} [MJO] RMM Forecast`, sub = `Updated --> ${cyc}`;
+    let title = `${C.indices.mjo.name} [MJO] RMM Forecast`, sub = runText(cyc);
     if (state.view === "all") {
       for (const m of MODEL_KEYS) {
         const r = runAtOrBefore(m, cyc, C.sameCycleHours);
@@ -374,8 +376,8 @@
     const cyc = state.cycle, tracks = [], ampSeries = [], legend = [], used = [], missing = [];
     const t1 = Math.floor(runMs(cyc) / DAY) * DAY;
     const obs = gwoFromDaily(obsAamDaily(), t1 - 40 * DAY, t1);
-    const obsTrack = { label: "Observed (40 days)", color: "#222", lw: 2.2, ms: 2.5, points: obs, endLabel: obs.length ? "OBS" : null };
-    let title = "Global Wind Oscillation [GWO] Forecast", sub = `Updated --> ${cyc}`;
+    const obsTrack = { label: "Observed (40 days)", color: "#334155", lw: 2.2, ms: 2.5, points: obs, endLabel: obs.length ? "OBS" : null };
+    let title = "Global Wind Oscillation [GWO] Forecast", sub = runText(cyc);
     const ampOf = pts => pts.map(p => ({ t: p.t, v: Math.hypot(p.x, p.y) }));
     if (state.view === "all") {
       for (const m of MODEL_KEYS) {
@@ -445,7 +447,7 @@
     if (obs.length) {
       const last = obs[obs.length - 1];
       const pick = back => obs.filter(p => p.t <= last.t - back * DAY).pop();
-      rows.push({ label: "Observed", color: "#000", cells: [[10, pick(10)], [5, pick(5)], [0, last]].filter(x => x[1]).map(([b, p]) => cell(p, `${b ? b + " days ago" : "latest"} · ${fmt(p.t)}`)) });
+      rows.push({ label: "Observed", color: "#334155", cells: [[10, pick(10)], [5, pick(5)], [0, last]].filter(x => x[1]).map(([b, p]) => cell(p, `${b ? b + " days ago" : "latest"} · ${fmt(p.t)}`)) });
       if (Math.hypot(last.x, last.y) >= 1) defaultCat = phaseOf(last.x, last.y) - 1;
     }
     for (const m of MODEL_KEYS) {

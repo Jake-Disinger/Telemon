@@ -241,10 +241,10 @@
       const an = (maps.analysis || []).slice(0, 30);
       const ajs = await Promise.all(an.map(r => getMap("analysis", r)));
       const obs = an.map((r, i) => ajs[i] && { t: ridMs(r), v: sigma({ j: ajs[i], si: 0 }, ridMs(r)) }).filter(p => p && p.v != null).sort((a, b) => a.t - b.t);
-      const OBS = { label: "Observed", color: "#000", symbol: "circle", filled: false, points: obs, ms: 4, lw: 2 };
+      const OBS = { label: "Observed", color: "#334155", symbol: "circle", filled: true, points: obs, ms: 3.2, lw: 2.4 };
       if (obs.length) series.push(OBS);
       const rows = [];
-      if (obs.length) rows.push({ label: "Observed", color: "#000", pts: obs.slice(-21) });
+      if (obs.length) rows.push({ label: "Observed", color: "#334155", pts: obs.slice(-21) });
       for (const k of Object.keys(C.models)) {
         const list = maps[k] || []; if (!list.length) continue;
         const j = await getMap(k, list[0]); if (!j) continue;
