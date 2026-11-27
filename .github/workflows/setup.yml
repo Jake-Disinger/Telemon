@@ -108,6 +108,13 @@ jobs:
           TELE_CLIMATOLOGY: ${{ github.workspace }}/pipeline/climatology.npz
         run: python pipeline/backfill_analysis.py --days ${{ inputs.backfill_days }}
 
+      - name: Correct stored AAM if the calibration changed
+        env:
+          TELE_DATA_DIR: ${{ github.workspace }}/site/data
+          TELE_STATE_DIR: ${{ github.workspace }}/site/_state
+          TELE_CLIMATOLOGY: ${{ github.workspace }}/pipeline/climatology.npz
+        run: python pipeline/repair_aam.py
+
       - name: US composites for the MJO, GWO, Bering Sea and Typhoon tabs (about 20-40 minutes the first time)
         id: comp
         continue-on-error: true
