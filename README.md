@@ -1,6 +1,6 @@
 # Teleconnection Monitor
 
-A self-hosted page for NAO, AO, PNA, EPO, AAM and MJO forecasts, styled after the weathermodels.com teleconnection charts. Every model run is saved as its own file, so you can step back through earlier runs.
+A self-hosted page for NAO, AO, PNA, EPO, AAM and MJO forecasts from several models on one chart. Every model run is saved as its own file, so you can step back through earlier runs.
 
 ```
 telemon/
@@ -23,7 +23,7 @@ telemon/
 ## Page features
 
 - **Tabs:** Overview (all six indices on one screen), NAO, AO, PNA, EPO, AAM, MJO, and CPC Outlooks.
-- **All Models view:** a clone of the weathermodels multi-model chart. It shows ECMWF HRES, EPS mean, AIFS, GFS, GEFS mean and GEPS mean, with the observed index as the black line. Legend entries for models without data are greyed out.
+- **All Models view:** one chart with ECMWF HRES, EPS mean, AIFS, GFS, GEFS mean and GEPS mean, with the observed index as the dark gray line. Legend entries for models without data are greyed out.
 - **Single Model view:**
   - Deterministic models get a line chart.
   - Ensembles get the ECMWF-style box-and-whisker chart: 25–75% box, 5–95% whiskers, green ensemble mean. **Show members** adds the spaghetti lines.
