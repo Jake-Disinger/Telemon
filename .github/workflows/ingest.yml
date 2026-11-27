@@ -1,7 +1,9 @@
 name: Ingest model runs
 
-# Checks for new model runs twice an hour, computes the indices, stores the JSON on the
-# "data-store" branch and republishes the GitHub Pages site.
+# Checks for new model runs, computes the indices, stores the JSON on the "data-store"
+# branch and republishes the GitHub Pages site. GitHub often skips scheduled runs, so each
+# run also starts the next one about 25 minutes after it finishes; the schedule is a backup
+# that restarts the cycle if it ever stops. (Free for public repositories.)
 on:
   schedule:
     - cron: "7,37 * * * *"
@@ -13,11 +15,15 @@ on:
       run:
         description: "Specific run YYYYMMDDHH (leave blank to pick up new runs automatically)"
         default: ""
+      chain:
+        description: "Started automatically by the previous run (leave as false)"
+        default: "false"
 
 permissions:
   contents: write
   pages: write
   id-token: write
+  actions: write
 
 concurrency:
   group: ingest
@@ -77,7 +83,7 @@ jobs:
           git config user.name "telemon-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          if git diff --cached --quiet && [ "${{ github.event_name }}" = "schedule" ]; then
+          if git diff --cached --quiet && { [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.chain }}" = "true" ]; }; then
             echo "Nothing new."; echo "changed=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
           git checkout -q --orphan snapshot
@@ -101,3 +107,19 @@ jobs:
     steps:
       - uses: actions/deploy-pages@v4
         id: deploy
+
+  # Start the next check ~25 minutes after this one finishes (keeps updates going when
+  # GitHub skips scheduled runs). Runs even if the ingest failed, so one bad run does not
+  # stop the cycle.
+  next:
+    needs: [ingest, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Wait, then queue the next ingest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sleep 1500
+          gh workflow run ingest.yml -R "$GITHUB_REPOSITORY" --ref "${GITHUB_REF_NAME:-main}" -f chain=true
