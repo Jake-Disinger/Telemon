@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teleconnection Monitor</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath d=%22M1 9 Q4 2 8 8 T15 7%22 fill=%22none%22 stroke=%22%231a6fef%22 stroke-width=%222%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><span id="siteTitle">Teleconnection Monitor</span><span class="sub" id="updated"></span></div>
+  <nav id="tabs"></nav>
+</header>
+<section id="controls">
+  <div class="ctl" id="viewGroup"><span class="lab">View</span><div class="seg" id="viewSeg"></div></div>
+  <div class="ctl" id="modelGroup"><span class="lab">Model</span><select id="modelSel"></select></div>
+  <div class="ctl"><span class="lab">Run</span>
+    <button id="prevRun" title="Older run (←)">◀</button>
+    <select id="runSel"></select>
+    <button id="nextRun" title="Newer run (→)">▶</button>
+    <button id="latestBtn" title="Always show the newest run">Latest</button>
+  </div>
+  <div class="ctl" id="trendGroup"><span class="lab">Runs</span>
+    <select id="trendN"><option>2</option><option>4</option><option>6</option><option>8</option><option>10</option><option>12</option></select></div>
+  <div class="ctl" id="memGroup"><label><input type="checkbox" id="memChk"> Show members</label></div>
+  <div class="ctl right"><button id="pngBtn" title="Download the chart(s) as PNG">Save PNG</button></div>
+  <span id="status"></span>
+</section>
+<main id="main"></main>
+<footer>Indices computed from model 500/1000 hPa heights, zonal wind and OLR against a 1991–2020 NCEP/NCAR Reanalysis climatology. Dark gray line = analysis (observed). See README for definitions.</footer>
+<script src="js/config.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/maps.js"></script>
+<script src="js/impacts.js"></script>
+<script src="js/rules.js"></script>
+<script src="js/scorecard.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
