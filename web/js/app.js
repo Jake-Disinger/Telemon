@@ -4,9 +4,9 @@
   "use strict";
   const C = window.TELE_CONFIG, TC = window.TeleCharts, DAY = TC.DAY, MON = TC.MON;
   const EMBED = window.TELE_EMBED || null;              // single-file demo build
-  const TABS = ["overview", "nao", "ao", "pna", "epo", "aam", "mjo", "gwo", "bsr", "typhoon", "outlooks"];
-  const STANDALONE = ["outlooks", "bsr", "typhoon"];          // tabs with their own controls
-  const TAB_LABEL = { overview: "Overview", outlooks: "CPC Outlooks", gwo: "GWO", bsr: "Bering Sea Rule", typhoon: "Typhoon Rule" };
+  const TABS = ["overview", "nao", "ao", "pna", "epo", "aam", "mjo", "gwo", "bsr", "typhoon", "score", "outlooks"];
+  const STANDALONE = ["outlooks", "bsr", "typhoon", "score"];          // tabs with their own controls
+  const TAB_LABEL = { overview: "Overview", outlooks: "CPC Outlooks", gwo: "GWO", bsr: "Bering Sea Rule", typhoon: "Typhoon Rule", score: "Scorecard" };
   const LINE_IDX = ["nao", "ao", "pna", "epo", "aam"];
   const MODEL_KEYS = Object.keys(C.models);
   const $ = s => document.querySelector(s);
@@ -476,6 +476,10 @@
     if (cycles.length && (state.follow || !state.cycle || !cycles.includes(state.cycle))) state.cycle = cycles[0];
     buildTabs(); buildControls(); writeHash();
     const main = $("#main");
+    if (state.tab === "score") {
+      $("#updated").textContent = manifest.updated ? `Data updated ${manifest.updated.replace("T", " ")}` : "";
+      return window.TeleScore.render(main, appContext());
+    }
     if (state.tab === "bsr" || state.tab === "typhoon") {
       $("#updated").textContent = manifest.updated ? `Data updated ${manifest.updated.replace("T", " ")}` : "";
       return window.TeleRules[state.tab](main, appContext());
