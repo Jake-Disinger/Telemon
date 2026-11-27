@@ -76,6 +76,14 @@ jobs:
           python pipeline/run_ingest.py $ARGS
           rm -f site/_state/ingest.lock
 
+      - name: Update the forecast scorecard
+        continue-on-error: true
+        env:
+          TELE_DATA_DIR: ${{ github.workspace }}/site/data
+          TELE_STATE_DIR: ${{ github.workspace }}/site/_state
+          TELE_CLIMATOLOGY: ${{ github.workspace }}/pipeline/climatology.npz
+        run: python pipeline/scorecard.py
+
       - name: Save data (single commit, no history buildup)
         id: save
         run: |
